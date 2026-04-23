@@ -243,8 +243,29 @@ def inject_css() -> None:
             background:{c['card_bg']}; border:1px solid {c['border']};
             border-radius:12px; padding:14px 16px; margin-bottom:8px;
             transition:border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+            position:relative;
+            overflow:hidden;
         }}
         .entity-card:hover {{ border-color:{c['gold_border']}; box-shadow:0 10px 24px rgba(0,0,0,0.2); transform:translateY(-1px); }}
+        .entity-card.priority {{
+            border-color:rgba(225,29,72,0.28);
+            box-shadow:0 12px 28px rgba(225,29,72,0.08), 0 8px 20px rgba(0,0,0,0.18);
+        }}
+        .entity-card.priority::before {{
+            content:"";
+            position:absolute;
+            inset:0 auto 0 0;
+            width:4px;
+            background:linear-gradient(180deg,#FB7185,#E11D48);
+        }}
+        .priority-kicker {{
+            color:#FB7185;
+            font-size:9px;
+            font-weight:800;
+            letter-spacing:0.12em;
+            text-transform:uppercase;
+            margin-bottom:8px;
+        }}
         .entity-card h4 {{ margin:0 0 3px 0; color:{c['text']}; font-size:0.97rem; font-weight:800; }}
         .entity-card .meta {{ color:{c['text_muted']}; font-size:0.8rem; margin-bottom:0.3rem; }}
         .entity-card .rationale {{ color:{c['text_dim']}; font-size:0.84rem; line-height:1.55; }}
@@ -295,6 +316,19 @@ def inject_css() -> None:
             border:1px solid {c['gold_border']}; border-radius:18px; padding:18px;
             box-shadow:0 18px 34px rgba(0,0,0,0.18);
         }}
+        .working-panel {{
+            border-color:rgba(225,29,72,0.22);
+            box-shadow:0 18px 40px rgba(225,29,72,0.08), 0 18px 34px rgba(0,0,0,0.18);
+        }}
+        .insight-callout {{
+            color:{c['text_dim']};
+            font-size:12px;
+            line-height:1.65;
+            margin:0 0 8px 0;
+        }}
+        .insight-callout strong {{
+            color:{c['text']};
+        }}
         .drawer-section {{ padding-top:14px; margin-top:14px; border-top:1px solid {c['border']}; }}
         .empty-state {{ text-align:center; padding:40px 20px; }}
         .empty-state .icon {{ font-size:36px; margin-bottom:12px; }}
@@ -326,26 +360,10 @@ def inject_css() -> None:
 
 def risk_badge_html(level: int) -> str:
     meta = RISK_META.get(level, RISK_META[2])
-    backgrounds = {
-        5: "rgba(225,29,72,0.12)",
-        4: "rgba(249,115,22,0.12)",
-        3: "rgba(234,179,8,0.12)",
-        2: "rgba(74,127,212,0.12)",
-        1: "rgba(74,127,212,0.08)",
-        0: "rgba(16,185,129,0.12)",
-    }
-    borders = {
-        5: "rgba(225,29,72,0.3)",
-        4: "rgba(249,115,22,0.3)",
-        3: "rgba(234,179,8,0.3)",
-        2: "rgba(74,127,212,0.3)",
-        1: "rgba(74,127,212,0.2)",
-        0: "rgba(16,185,129,0.3)",
-    }
     dot = f'<span style="width:5px;height:5px;border-radius:50%;background:{meta["color"]};display:inline-block;margin-right:5px;"></span>'
     return (
         f'<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;'
-        f'background:{backgrounds.get(level, backgrounds[2])};border:1px solid {borders.get(level, borders[2])};color:{meta["color"]};'
+        f'background:{meta["bg"]};border:1px solid {meta["border"]};color:{meta["color"]};'
         f'font-size:10px;font-weight:800;white-space:nowrap;">{dot}{meta["label"]} {level}</span>'
     )
 
@@ -479,6 +497,46 @@ def render_search_result(row: pd.Series, selected_brand: str | None) -> None:
     st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
 
+def render_priority_card(row: pd.Series) -> None:
+    brand = str(row["Brand"])
+    level = int(row.get("Risk Level", 2))
+    meta = RISK_META.get(level, RISK_META[2])
+    alert = alert_badge_html(str(row.get("Alert Status", "")))
+    service = str(row.get("Service Type", "")) or "Unspecified"
+    regulator = str(row.get("Regulator Scope", "")) or "Unspecified"
+    rationale = str(row.get("Rationale", ""))[:260]
+    action_required = str(row.get("Action Required", ""))
+    source_url = str(row.get("Top Source URL", ""))
+    confidence = str(row.get("Confidence", ""))
+    urgency = "Immediate attention recommended" if level >= 5 else "Priority review recommended"
+    st.markdown(
+        f"""
+        <div class="entity-card priority">
+          <div class="priority-kicker">{urgency}</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div style="flex:1;min-width:0;">
+              <h4>{brand} {alert}</h4>
+              <div class="meta"><span class="result-tag">{service}</span> <span class="result-tag">{regulator}</span></div>
+              <div class="rationale">{rationale}</div>
+              {f'<div class="action-note">{action_required}</div>' if action_required else ''}
+            </div>
+            <div style="text-align:right;min-width:128px;flex-shrink:0;">
+              {risk_badge_html(level)}
+              <div style="color:{meta['color']};font-size:10px;font-weight:800;margin-top:8px;">CONF {confidence}%</div>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    actions = st.columns([1.2, 1.1, 3])
+    if actions[0].button("Open detail", key=f"overview_detail_{row.name}", use_container_width=True):
+        set_selected_entity(brand)
+        st.rerun()
+    if source_url.startswith("http"):
+        actions[1].link_button("Source", source_url, use_container_width=True)
+
+
 def render_entity_panel(row: pd.Series, closeable: bool = False) -> None:
     brand = str(row.get("Brand", ""))
     level = int(row.get("Risk Level", 2))
@@ -491,10 +549,10 @@ def render_entity_panel(row: pd.Series, closeable: bool = False) -> None:
     rationale = str(row.get("Rationale", "")) or "No rationale available."
     action_required = str(row.get("Action Required", "")) or "No action specified."
 
-    st.markdown('<div class="drawer-panel">', unsafe_allow_html=True)
+    st.markdown('<div class="drawer-panel working-panel">', unsafe_allow_html=True)
     if closeable:
         header_cols = st.columns([4, 1.2])
-        header_cols[0].markdown('<div class="section-title">Entity Detail</div>', unsafe_allow_html=True)
+        header_cols[0].markdown('<div class="section-title">Active Working Panel</div>', unsafe_allow_html=True)
         if header_cols[1].button("Close", key=f"close_{brand}", use_container_width=True):
             set_selected_entity(None)
             st.rerun()
@@ -504,6 +562,10 @@ def render_entity_panel(row: pd.Series, closeable: bool = False) -> None:
         <div style="color:{c['text']};font-size:20px;font-weight:800;margin:10px 0 4px 0;">{brand}</div>
         <div style="color:{c['text_muted']};font-size:11px;">{classification}</div>
         """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="insight-callout"><strong>Working context:</strong> this panel is pinned to <strong>{brand}</strong>. Use it to review rationale, log actions, and keep one entity in focus while filtering the rest of the run.</div>',
         unsafe_allow_html=True,
     )
 
@@ -749,7 +811,10 @@ with tab_home:
     left_col, right_col = st.columns([1.7, 1])
     with left_col:
         st.markdown('<div class="section-title">Priority Review Queue</div>', unsafe_allow_html=True)
-        st.caption("High and Critical entities — click 'Open detail' to inspect the full review panel.")
+        st.markdown(
+            f'<div class="insight-callout"><strong>Urgent queue:</strong> these are the highest-risk entities in the current run. Start with Critical and High items first, then move into monitor-tier reviews.</div>',
+            unsafe_allow_html=True,
+        )
         top_risk = df[df["Risk Level"] >= 4].sort_values("Risk Level", ascending=False).head(10)
         if top_risk.empty:
             st.markdown(
@@ -764,42 +829,12 @@ with tab_home:
             )
         else:
             for _, row in top_risk.iterrows():
-                brand = str(row["Brand"])
-                alert = alert_badge_html(str(row.get("Alert Status", "")))
-                service = str(row.get("Service Type", "")) or "Unspecified"
-                regulator = str(row.get("Regulator Scope", "")) or "Unspecified"
-                rationale = str(row.get("Rationale", ""))[:280]
-                action_required = str(row.get("Action Required", ""))
-                source_url = str(row.get("Top Source URL", ""))
-                confidence = str(row.get("Confidence", ""))
-                st.markdown(
-                    f"""
-                    <div class="entity-card">
-                      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-                        <div style="flex:1;min-width:0;">
-                          <h4>{brand} {alert}</h4>
-                          <div class="meta"><span class="result-tag">{service}</span> <span class="result-tag">{regulator}</span></div>
-                          <div class="rationale">{rationale}</div>
-                          {f'<div class="action-note">{action_required}</div>' if action_required else ''}
-                        </div>
-                        <div style="text-align:right;min-width:120px;flex-shrink:0;">
-                          {risk_badge_html(int(row.get("Risk Level", 2)))}
-                          <div style="color:{c['text_muted']};font-size:9px;margin-top:4px;">CONF {confidence}%</div>
-                        </div>
-                      </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                actions = st.columns([1.2, 1.1, 3])
-                if actions[0].button(f"Open detail", key=f"overview_detail_{row.name}", use_container_width=True):
-                    set_selected_entity(brand)
-                    st.rerun()
-                if source_url.startswith("http"):
-                    actions[1].link_button("Source", source_url, use_container_width=True)
+                render_priority_card(row)
 
     with right_col:
-        if metrics["new_entities"] > 0 or metrics["risk_up"] > 0:
+        if selected_entity_row is not None:
+            render_entity_panel(selected_entity_row, closeable=True)
+        elif metrics["new_entities"] > 0 or metrics["risk_up"] > 0:
             st.markdown(
                 f"""
                 <div style="background:rgba(249,115,22,0.07);border:1px solid rgba(249,115,22,0.2);border-radius:10px;padding:12px 14px;margin-bottom:14px;">
@@ -810,40 +845,51 @@ with tab_home:
                 """,
                 unsafe_allow_html=True,
             )
-        st.markdown('<div class="section-title">Run Summary</div>', unsafe_allow_html=True)
-        for label, value in [
-            ("File", Path(selected_path).name[:40]),
-            ("Top Regulator", dominant_value(df, "Regulator Scope")),
-            ("Top Service", dominant_value(df, "Service Type")),
-            ("Total Rows", f'{len(df):,}'),
-            ("Last Updated", now_str),
-        ]:
+            st.markdown('<div class="section-title">Run Summary</div>', unsafe_allow_html=True)
             st.markdown(
-                f"""
-                <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid {c['border']};gap:8px;">
-                  <span style="color:{c['text_muted']};font-size:10px;">{label}</span>
-                  <span style="color:{c['text']};font-size:10px;font-weight:700;text-align:right;word-break:break-word;max-width:160px;">{value}</span>
-                </div>
-                """,
+                f'<div class="insight-callout"><strong>Working panel:</strong> select any entity from the queue or search results to turn this area into a focused review workspace. Until then, this summary keeps the run context visible.</div>',
                 unsafe_allow_html=True,
             )
-        risk_counts = df["Risk Level"].value_counts().reset_index()
-        risk_counts.columns = ["level", "count"]
-        risk_counts["label"] = risk_counts["level"].map(lambda value: RISK_META[int(value)]["label"])
-        risk_chart = (
-            alt.Chart(risk_counts)
-            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, opacity=0.9)
-            .encode(
-                x=alt.X("label:N", axis=alt.Axis(labelAngle=0, title=None, labelColor=c["text_dim"])),
-                y=alt.Y("count:Q", axis=alt.Axis(title=None, gridColor=c["border"], labelColor=c["text_dim"])),
-                color=alt.Color("label:N", legend=None),
-                tooltip=["label:N", alt.Tooltip("count:Q", title="Entities")],
+            for label, value in [
+                ("File", Path(selected_path).name[:40]),
+                ("Top Regulator", dominant_value(df, "Regulator Scope")),
+                ("Top Service", dominant_value(df, "Service Type")),
+                ("Total Rows", f'{len(df):,}'),
+                ("Last Updated", now_str),
+            ]:
+                st.markdown(
+                    f"""
+                    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid {c['border']};gap:8px;">
+                      <span style="color:{c['text_muted']};font-size:10px;">{label}</span>
+                      <span style="color:{c['text']};font-size:10px;font-weight:700;text-align:right;word-break:break-word;max-width:160px;">{value}</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            risk_counts = df["Risk Level"].value_counts().reset_index()
+            risk_counts.columns = ["level", "count"]
+            risk_counts["label"] = risk_counts["level"].map(lambda value: RISK_META[int(value)]["label"])
+            risk_chart = (
+                alt.Chart(risk_counts)
+                .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, opacity=0.9)
+                .encode(
+                    x=alt.X("label:N", axis=alt.Axis(labelAngle=0, title=None, labelColor=c["text_dim"])),
+                    y=alt.Y("count:Q", axis=alt.Axis(title=None, gridColor=c["border"], labelColor=c["text_dim"])),
+                    color=alt.Color(
+                        "label:N",
+                        scale=alt.Scale(
+                            domain=[RISK_META[i]["label"] for i in sorted(RISK_META)],
+                            range=[RISK_META[i]["color"] for i in sorted(RISK_META)],
+                        ),
+                        legend=None,
+                    ),
+                    tooltip=["label:N", alt.Tooltip("count:Q", title="Entities")],
+                )
+                .properties(height=200, title="Risk Distribution")
+                .configure_view(strokeOpacity=0, fill=c["card_bg"])
+                .configure(background=c["card_bg"])
             )
-            .properties(height=200, title="Risk Distribution")
-            .configure_view(strokeOpacity=0, fill=c["card_bg"])
-            .configure(background=c["card_bg"])
-        )
-        st.altair_chart(risk_chart, use_container_width=True)
+            st.altair_chart(risk_chart, use_container_width=True)
 
 
 with tab_search:
@@ -1092,6 +1138,11 @@ with tab_insights:
     risk_counts.columns = ["level", "count"]
     risk_counts["label"] = risk_counts["level"].map(lambda value: RISK_META[int(value)]["label"])
     with chart_cols_top[0]:
+        dominant_risk = risk_counts.sort_values("count", ascending=False).iloc[0]
+        st.markdown(
+            f'<div class="insight-callout"><strong>{dominant_risk["label"]}</strong> is the dominant risk tier in this run, which helps explain where the team should spend the most review effort.</div>',
+            unsafe_allow_html=True,
+        )
         risk_chart = (
             alt.Chart(risk_counts)
             .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, opacity=0.9)
@@ -1107,14 +1158,29 @@ with tab_insights:
         )
         st.altair_chart(risk_chart, use_container_width=True)
     with chart_cols_top[1]:
+        top_regulator_name = dominant_value(df, "Regulator Scope", "—")
+        st.markdown(
+            f'<div class="insight-callout"><strong>{top_regulator_name}</strong> appears most often in the dataset, so regulator-driven review patterns are concentrated there.</div>',
+            unsafe_allow_html=True,
+        )
         horizontal_bar(df["Regulator Scope"].value_counts().head(10), "Regulator Scope", "Entities per regulatory body", "#4A7FD4")
 
     chart_cols_bottom = st.columns(2)
     with chart_cols_bottom[0]:
+        top_service_name = dominant_value(df, "Service Type", "—")
+        st.markdown(
+            f'<div class="insight-callout"><strong>{top_service_name}</strong> is the most common service type in this run, which gives a quick read on where market exposure is clustered.</div>',
+            unsafe_allow_html=True,
+        )
         horizontal_bar(df["Service Type"].value_counts().head(10), "Service Type Mix", "Top service categories identified", c["gold"])
     with chart_cols_bottom[1]:
         alert_series = df["Alert Status"].replace("", pd.NA).dropna()
         if not alert_series.empty:
+            top_alert = alert_series.value_counts().idxmax()
+            st.markdown(
+                f'<div class="insight-callout"><strong>{top_alert}</strong> is the strongest alert pattern in this run, highlighting the change type most visible against prior screening history.</div>',
+                unsafe_allow_html=True,
+            )
             horizontal_bar(alert_series.value_counts().head(10), "Alert Status Mix", "Changes detected vs. prior run", "#F97316")
         else:
             st.markdown(
@@ -1132,6 +1198,11 @@ with tab_insights:
     st.markdown(f'<div style="color:{c["text"]};font-size:12px;font-weight:800;margin-bottom:4px;">Trend Across Runs</div>', unsafe_allow_html=True)
     trend_df = build_trend_dataframe(files, load_screening_data)
     if len(trend_df) >= 2:
+        latest_trend = trend_df.iloc[-1]
+        st.markdown(
+            f'<div class="insight-callout"><strong>{latest_trend["High/Critical"]}</strong> entities currently sit in High/Critical tiers across the latest run, giving a quick historical anchor before you inspect the line chart.</div>',
+            unsafe_allow_html=True,
+        )
         trend_long = trend_df.melt("Run", var_name="Category", value_name="Count")
         trend_chart = (
             alt.Chart(trend_long)

@@ -10,12 +10,12 @@ import pandas as pd
 
 
 RISK_META = {
-    5: {"label": "Critical", "color": "#E11D48"},
-    4: {"label": "High", "color": "#F97316"},
-    3: {"label": "Medium", "color": "#EAB308"},
-    2: {"label": "Monitor", "color": "#4A7FD4"},
-    1: {"label": "Low", "color": "#4A7FD4"},
-    0: {"label": "Licensed", "color": "#10B981"},
+    5: {"label": "Critical", "color": "#E11D48", "bg": "rgba(225,29,72,0.12)", "border": "rgba(225,29,72,0.3)"},
+    4: {"label": "High", "color": "#F97316", "bg": "rgba(249,115,22,0.12)", "border": "rgba(249,115,22,0.3)"},
+    3: {"label": "Medium", "color": "#EAB308", "bg": "rgba(234,179,8,0.12)", "border": "rgba(234,179,8,0.3)"},
+    2: {"label": "Monitor", "color": "#4A7FD4", "bg": "rgba(74,127,212,0.12)", "border": "rgba(74,127,212,0.3)"},
+    1: {"label": "Low", "color": "#4A7FD4", "bg": "rgba(74,127,212,0.08)", "border": "rgba(74,127,212,0.2)"},
+    0: {"label": "Licensed", "color": "#10B981", "bg": "rgba(16,185,129,0.12)", "border": "rgba(16,185,129,0.3)"},
 }
 
 
