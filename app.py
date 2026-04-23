@@ -19,6 +19,7 @@ import io
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -75,17 +76,17 @@ T = {
         "input_bg":      "#0C1228",
     },
     "light": {
-        "app_bg":        "#EBF0FB",
-        "sidebar_bg":    "#DDE5F5",
+        "app_bg":        "#DCE5F2",
+        "sidebar_bg":    "#CEDAEB",
         "card_bg":       "#FFFFFF",
-        "raised_bg":     "#F0F4FF",
+        "raised_bg":     "#E8EEF8",
         "text":          "#0F172A",
-        "text_dim":      "#475569",
-        "text_muted":    "#94A3B8",
+        "text_dim":      "#334155",
+        "text_muted":    "#64748B",
         "gold":          "#8A6012",
-        "gold_dim":      "rgba(138,96,18,0.09)",
-        "gold_border":   "rgba(138,96,18,0.28)",
-        "border":        "rgba(0,0,0,0.08)",
+        "gold_dim":      "rgba(138,96,18,0.12)",
+        "gold_border":   "rgba(138,96,18,0.34)",
+        "border":        "rgba(15,23,42,0.12)",
         "input_bg":      "#FFFFFF",
     },
 }
@@ -282,9 +283,9 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
 .entity-card {{
     background:{c['card_bg']}; border:1px solid {c['border']};
     border-radius:12px; padding:14px 16px; margin-bottom:8px;
-    transition:border-color 0.2s, box-shadow 0.2s;
+    transition:border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }}
-.entity-card:hover {{ border-color:{c['gold_border']}; box-shadow:0 4px 16px rgba(0,0,0,0.2); }}
+.entity-card:hover {{ border-color:{c['gold_border']}; box-shadow:0 10px 24px rgba(0,0,0,0.2); transform:translateY(-1px); }}
 .entity-card h4 {{ margin:0 0 3px 0; color:{c['text']}; font-size:0.97rem; font-weight:800; }}
 .entity-card .meta {{ color:{c['text_muted']}; font-size:0.8rem; margin-bottom:0.3rem; }}
 .entity-card .rationale {{ color:{c['text_dim']}; font-size:0.84rem; line-height:1.55; }}
@@ -292,11 +293,9 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
 
 /* Search results list */
 .result-shell {{
-    background:linear-gradient(180deg,{c['card_bg']} 0%, rgba(12,18,40,0.92) 100%);
-    border:1px solid {c['border']};
-    border-radius:16px;
-    overflow:hidden;
-    box-shadow:0 10px 30px rgba(0,0,0,0.18);
+    display:flex;
+    flex-direction:column;
+    gap:10px;
 }}
 .result-head {{
     display:grid;
@@ -313,24 +312,40 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
     letter-spacing:0.1em;
     text-transform:uppercase;
 }}
+.result-row-wrap {{
+    position:relative;
+}}
+.result-row-link {{
+    display:block;
+    text-decoration:none;
+}}
 .result-row {{
     display:grid;
     grid-template-columns: minmax(240px, 1.35fr) minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(160px, 1fr) 98px;
     gap:14px;
-    padding:16px;
-    margin-top:10px;
+    padding:14px 16px;
     background:{c['card_bg']};
     border:1px solid {c['border']};
     border-radius:16px;
-    transition:background 0.18s ease, transform 0.18s ease;
+    transition:background 0.18s ease, transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     box-shadow:0 8px 22px rgba(0,0,0,0.14);
 }}
-.result-row:hover {{ background:{c['raised_bg']}; }}
+.result-row-link:hover .result-row,
+.result-row-link:focus .result-row {{
+    background:{c['raised_bg']};
+    border-color:{c['gold_border']};
+    transform:translateY(-1px);
+    box-shadow:0 14px 28px rgba(0,0,0,0.2);
+}}
+.result-row.selected {{
+    border-color:{c['gold_border']};
+    box-shadow:0 14px 28px rgba(0,0,0,0.2);
+}}
 .result-brand {{
     color:{c['text']};
     font-size:14px;
     font-weight:800;
-    margin-bottom:8px;
+    margin-bottom:6px;
 }}
 .result-meta {{
     display:flex;
@@ -374,24 +389,81 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
     background:rgba(255,255,255,0.02);
     border:1px solid {c['border']};
     border-radius:10px;
-    padding:10px 12px;
+    padding:8px 10px;
+}}
+.result-actions {{
+    display:flex;
+    gap:8px;
+    margin:8px 0 4px 0;
+}}
+
+.filter-shell {{
+    background:{c['card_bg']};
+    border:1px solid {c['border']};
+    border-radius:16px;
+    padding:14px;
+    margin-bottom:12px;
+    box-shadow:0 8px 22px rgba(0,0,0,0.12);
+}}
+.filter-grid {{
+    display:grid;
+    grid-template-columns: minmax(300px, 1.8fr) minmax(170px, 1fr) minmax(170px, 1fr) 120px;
+    gap:12px;
+    align-items:end;
+}}
+.filter-label {{
+    color:{c['text_muted']};
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    margin-bottom:6px;
+}}
+.helper-note {{
+    color:{c['text_muted']};
+    font-size:11px;
+    margin-top:4px;
+}}
+.active-filter-bar {{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+    margin:10px 0 4px 0;
+}}
+.drawer-panel {{
+    background:linear-gradient(180deg,{c['card_bg']} 0%, {c['raised_bg']} 100%);
+    border:1px solid {c['gold_border']};
+    border-radius:18px;
+    padding:18px;
+    box-shadow:0 18px 34px rgba(0,0,0,0.18);
+}}
+.drawer-section {{
+    padding-top:14px;
+    margin-top:14px;
+    border-top:1px solid {c['border']};
+}}
+.kpi-note {{
+    color:{c['text_muted']};
+    font-size:10px;
+    margin-top:6px;
+    line-height:1.5;
+}}
+.empty-state strong {{
+    color:{c['text']};
 }}
 
 @media (max-width: 1100px) {{
     .result-head {{ display:none; }}
-    .result-shell {{
-        background:transparent;
-        border:none;
-        box-shadow:none;
-        overflow:visible;
-    }}
     .result-row {{
         grid-template-columns: 1fr;
         gap:10px;
         background:{c['card_bg']};
         border:1px solid {c['border']};
         border-radius:14px;
-        margin-bottom:10px;
+    }}
+    .filter-grid {{
+        grid-template-columns: 1fr;
     }}
 }}
 
@@ -546,6 +618,44 @@ def load_data(path: str) -> tuple[pd.DataFrame, str | None]:
         df = df[~df["Brand"].apply(is_noise_brand)].reset_index(drop=True)
     return df, None
 
+@st.cache_data(show_spinner=False)
+def load_run_summary(path: str) -> dict:
+    df, err = load_data(path)
+    if err or df.empty:
+        return {}
+    return {
+        "total": len(df),
+        "critical_high": int((df["Risk Level"] >= 4).sum()) if "Risk Level" in df.columns else 0,
+        "needs_review": int(((df["Risk Level"] >= 2) & (df["Risk Level"] <= 3)).sum()) if "Risk Level" in df.columns else 0,
+        "licensed": int((df["Risk Level"] == 0).sum()) if "Risk Level" in df.columns else 0,
+        "new_entities": int((df["Alert Status"] == "🆕 NEW").sum()) if "Alert Status" in df.columns else 0,
+    }
+
+def metric_delta(current: int, previous: int) -> tuple[str | None, str]:
+    diff = current - previous
+    if previous == 0 and current == 0:
+        return None, "flat"
+    if previous == 0 and current != 0:
+        return f"+{current} vs prior run", "up"
+    prefix = "+" if diff > 0 else ""
+    direction = "up" if diff > 0 else ("down" if diff < 0 else "flat")
+    return f"{prefix}{diff} vs prior run", direction
+
+def set_selected_entity(brand: str | None):
+    if brand:
+        st.query_params["entity"] = brand
+    elif "entity" in st.query_params:
+        del st.query_params["entity"]
+
+def get_selected_entity() -> str | None:
+    entity = st.query_params.get("entity")
+    if isinstance(entity, list):
+        return entity[0] if entity else None
+    return entity
+
+def entity_href(brand: str) -> str:
+    return f"?entity={quote(brand)}"
+
 def render_card(row: pd.Series):
     level = int(row.get("Risk Level", 2))
     m     = RISK_META.get(level, RISK_META[2])
@@ -591,7 +701,7 @@ def render_card(row: pd.Series):
       </div>
     </div>""", unsafe_allow_html=True)
 
-def render_search_result(row: pd.Series):
+def render_search_result(row: pd.Series, selected_brand: str | None = None):
     level = int(row.get("Risk Level", 2))
     brand = str(row.get("Brand", ""))
     classification = str(row.get("Classification", "")) or "Unclassified"
@@ -604,76 +714,62 @@ def render_search_result(row: pd.Series):
     conf = str(row.get("Confidence", "")).strip() or "—"
     source_url = str(row.get("Top Source URL", "")).strip()
     alert = alert_badge_html(str(row.get("Alert Status", "")))
+    row_class = "result-row selected" if brand == selected_brand else "result-row"
 
     st.markdown(f"""
-    <div class="result-row">
-      <div>
-        <div class="result-brand">{brand} {alert}</div>
-        <div class="result-meta">
-          <span class="result-tag">{service}</span>
-          <span class="result-tag">{regulator}</span>
+    <div class="result-row-wrap">
+      <a class="result-row-link" href="{entity_href(brand)}">
+        <div class="{row_class}">
+          <div>
+            <div class="result-brand">{brand} {alert}</div>
+            <div class="result-meta">
+              <span class="result-tag">{service}</span>
+              <span class="result-tag">{regulator}</span>
+            </div>
+            <div class="result-rationale">{rationale or "No rationale available."}</div>
+          </div>
+          <div>
+            <div class="result-label">Classification</div>
+            <div class="result-value">{classification}</div>
+          </div>
+          <div>
+            <div class="result-label">Risk / Confidence</div>
+            <div class="result-value">{risk_badge_html(level)}</div>
+            <div class="result-value" style="margin-top:8px;">Confidence: <b>{conf}%</b></div>
+          </div>
+          <div>
+            <div class="result-label">Register Match</div>
+            <div class="result-value">{matched}</div>
+            <div class="result-action" style="margin-top:10px;">{action}</div>
+          </div>
+          <div>
+            <div class="result-label">Actions</div>
+            <div class="result-value">Open the full review panel</div>
+          </div>
         </div>
-        <div class="result-rationale">{rationale or "No rationale available."}</div>
-      </div>
-      <div>
-        <div class="result-label">Classification</div>
-        <div class="result-value">{classification}</div>
-      </div>
-      <div>
-        <div class="result-label">Risk / Confidence</div>
-        <div class="result-value">{risk_badge_html(level)}</div>
-        <div class="result-value" style="margin-top:8px;">Confidence: <b>{conf}%</b></div>
-      </div>
-      <div>
-        <div class="result-label">Register Match</div>
-        <div class="result-value">{matched}</div>
-        <div class="result-action" style="margin-top:10px;">{action}</div>
-      </div>
-      <div>
-        <div class="result-label">Actions</div>
-        <div class="result-value">Review this entity</div>
-      </div>
+      </a>
     </div>""", unsafe_allow_html=True)
 
-    action_cols = st.columns([1, 1, 3.4])
+    action_cols = st.columns([1.2, 1.05, 3.1])
     if action_cols[0].button("Open detail", key=f"search_detail_{row.name}", use_container_width=True):
-        show_entity_detail(row)
+        set_selected_entity(brand)
+        st.rerun()
     if source_url.startswith("http"):
         action_cols[1].link_button("Source", source_url, use_container_width=True)
     st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
-# ── ENTITY DETAIL DIALOG ──────────────────────────────────────────────────
-@st.dialog("Entity Detail", width="large")
-def show_entity_detail(row: pd.Series):
-    brand = str(row.get("Brand",""))
-    level = int(row.get("Risk Level", 2))
-    m     = RISK_META.get(level, RISK_META[2])
-
-    # Header
-    st.markdown(f"""
-    <div class="detail-header">
-      <div style="flex:1;">
-        {risk_badge_html(level)}
-        {alert_badge_html(str(row.get("Alert Status","")))}
-        <h3 style="color:{c['text']};font-size:18px;font-weight:800;margin:8px 0 4px 0;">{brand}</h3>
-        <div style="color:{c['text_muted']};font-size:11px;">{row.get('Classification','')}</div>
-      </div>
-    </div>""", unsafe_allow_html=True)
-
-    # Workflow actions
-    st.markdown(f'<div class="section-title">Workflow Actions</div>', unsafe_allow_html=True)
+def render_workflow_actions(brand: str):
     wf = st.session_state.workflow_log.get(brand)
-
     wa1, wa2, wa3, wa4 = st.columns(4)
     actions = [
-        (wa1, "✓ Mark Reviewed", "reviewed", "#10B981"),
-        (wa2, "↑ Escalate",      "escalated", "#F97316"),
-        (wa3, "✕ Clear",         "cleared",   "#4A7FD4"),
-        (wa4, "✎ Annotate",      "annotate",  c["gold"]),
+        (wa1, "Reviewed", "reviewed"),
+        (wa2, "Escalate", "escalated"),
+        (wa3, "Clear", "cleared"),
+        (wa4, "Annotate", "annotate"),
     ]
-    for col, label, action_id, color in actions:
+    for col, label, action_id in actions:
         is_active = wf and wf.get("action") == action_id
-        btn_label = f"{'✓ ' if is_active else ''}{label}"
+        btn_label = f"✓ {label}" if is_active else label
         if col.button(btn_label, key=f"wf_{action_id}_{brand}", use_container_width=True):
             if action_id == "annotate":
                 st.session_state[f"show_note_{brand}"] = True
@@ -682,8 +778,9 @@ def show_entity_detail(row: pd.Series):
                 st.rerun()
             else:
                 st.session_state.workflow_log[brand] = {
-                    "action": action_id, "note": None,
-                    "ts": datetime.now().strftime("%H:%M:%S")
+                    "action": action_id,
+                    "note": None,
+                    "ts": datetime.now().strftime("%H:%M:%S"),
                 }
                 st.rerun()
 
@@ -691,8 +788,9 @@ def show_entity_detail(row: pd.Series):
         note = st.text_area("Annotation note", placeholder="Enter your note…", key=f"note_{brand}")
         if st.button("Save note", key=f"save_note_{brand}"):
             st.session_state.workflow_log[brand] = {
-                "action": "annotated", "note": note,
-                "ts": datetime.now().strftime("%H:%M:%S")
+                "action": "annotated",
+                "note": note,
+                "ts": datetime.now().strftime("%H:%M:%S"),
             }
             st.session_state[f"show_note_{brand}"] = False
             st.rerun()
@@ -701,51 +799,67 @@ def show_entity_detail(row: pd.Series):
         note_text = f' — "{wf["note"]}"' if wf.get("note") else ""
         st.success(f"✓ Logged as **{wf['action']}** at {wf['ts']}{note_text}")
 
-    st.divider()
+def render_entity_panel(row: pd.Series, closeable: bool = False):
+    brand = str(row.get("Brand", ""))
+    level = int(row.get("Risk Level", 2))
+    classification = str(row.get("Classification", "")) or "—"
+    regulator = str(row.get("Regulator Scope", "")) or "—"
+    service = str(row.get("Service Type", "")) or "—"
+    matched = str(row.get("Matched Entity (Register)", "")) or "—"
+    conf = str(row.get("Confidence", "")) or "0"
+    url = str(row.get("Top Source URL", ""))
+    rat = str(row.get("Rationale", "")) or "No rationale available."
+    act = str(row.get("Action Required", "")) or "No action specified."
 
-    # Metadata grid
-    meta_col1, meta_col2 = st.columns(2)
-    with meta_col1:
-        for label, key in [("Service Type","Service Type"),("Regulator Scope","Regulator Scope"),("Classification","Classification")]:
-            val = str(row.get(key,"")) or "—"
-            st.markdown(f"""
-            <div style="margin-bottom:12px;">
-              <div style="color:{c['text_muted']};font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:3px;">{label}</div>
-              <div style="color:{c['text']};font-size:12px;">{val}</div>
-            </div>""", unsafe_allow_html=True)
-    with meta_col2:
-        conf = str(row.get("Confidence",""))
-        matched = str(row.get("Matched Entity (Register)","")) or "—"
-        url = str(row.get("Top Source URL",""))
-        st.markdown(f"""
-        <div style="margin-bottom:12px;">
-          <div style="color:{c['text_muted']};font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:3px;">Confidence</div>
-          <div style="height:8px;background:{c['border']};border-radius:99px;overflow:hidden;margin-bottom:4px;">
-            <div style="width:{conf}%;height:100%;background:#10B981;border-radius:99px;"></div>
-          </div>
-          <div style="color:{c['text_dim']};font-size:11px;font-weight:700;">{conf}%</div>
-        </div>
-        <div style="margin-bottom:12px;">
-          <div style="color:{c['text_muted']};font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:3px;">Matched Entity</div>
-          <div style="color:{c['text']};font-size:12px;">{matched}</div>
-        </div>""", unsafe_allow_html=True)
-        if url.startswith("http"):
-            st.link_button("↗ View Source", url)
-
-    st.divider()
-    rat = str(row.get("Rationale",""))
-    act = str(row.get("Action Required",""))
+    st.markdown('<div class="drawer-panel">', unsafe_allow_html=True)
+    if closeable:
+        top_actions = st.columns([4, 1.2])
+        top_actions[0].markdown('<div class="section-title">Entity Detail</div>', unsafe_allow_html=True)
+        if top_actions[1].button("Close", key=f"close_{brand}", use_container_width=True):
+            set_selected_entity(None)
+            st.rerun()
     st.markdown(f"""
-    <div style="margin-bottom:14px;">
-      <div style="color:{c['text_muted']};font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">Rationale</div>
-      <div style="color:{c['text_dim']};font-size:12px;line-height:1.7;">{rat}</div>
-    </div>""", unsafe_allow_html=True)
-    if act:
-        st.markdown(f"""
-        <div style="background:{c['gold_dim']};border:1px solid {c['gold_border']};border-radius:8px;padding:10px 14px;">
-          <div style="color:{c['gold']};font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px;">Action Required</div>
-          <div style="color:{c['text']};font-size:12px;line-height:1.65;">{act}</div>
-        </div>""", unsafe_allow_html=True)
+      {risk_badge_html(level)} {alert_badge_html(str(row.get("Alert Status","")))}
+      <div style="color:{c['text']};font-size:20px;font-weight:800;margin:10px 0 4px 0;">{brand}</div>
+      <div style="color:{c['text_muted']};font-size:11px;">{classification}</div>
+    """, unsafe_allow_html=True)
+
+    panel_actions = st.columns([1.2, 1])
+    if panel_actions[0].button("Open detail", key=f"drawer_dialog_{brand}", use_container_width=True):
+        show_entity_detail(row)
+    if url.startswith("http"):
+        panel_actions[1].link_button("Source", url, use_container_width=True)
+
+    st.markdown('<div class="drawer-section">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Workflow Actions</div>', unsafe_allow_html=True)
+    render_workflow_actions(brand)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="drawer-section">', unsafe_allow_html=True)
+    meta_cols = st.columns(2)
+    meta_items = [
+        ("Service Type", service),
+        ("Regulator Scope", regulator),
+        ("Matched Entity", matched),
+        ("Confidence", f"{conf}%"),
+    ]
+    for i, (label, value) in enumerate(meta_items):
+        with meta_cols[i % 2]:
+            st.markdown(
+                f'<div class="result-label">{label}</div><div class="result-value" style="margin-bottom:12px;">{value}</div>',
+                unsafe_allow_html=True,
+            )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="drawer-section">', unsafe_allow_html=True)
+    st.markdown(f'<div class="result-label">Rationale</div><div class="result-value">{rat}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="result-label" style="margin-top:14px;">Action Required</div><div class="result-action">{act}</div>', unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+# ── ENTITY DETAIL DIALOG ──────────────────────────────────────────────────
+@st.dialog("Entity Detail", width="large")
+def show_entity_detail(row: pd.Series):
+    render_entity_panel(row, closeable=False)
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -877,9 +991,25 @@ if df.empty:
     <div class="empty-state">
       <div class="icon">📭</div>
       <div class="title">Empty dataset</div>
-      <div class="desc">The selected file contains no valid entities after filtering.</div>
+      <div class="desc">The selected file contains no valid entities after filtering. Try another run or upload a fresh screening export.</div>
     </div>""", unsafe_allow_html=True)
     st.stop()
+
+selected_entity_brand = get_selected_entity()
+selected_entity_row = None
+if selected_entity_brand and "Brand" in df.columns:
+    entity_match = df[df["Brand"] == selected_entity_brand]
+    if not entity_match.empty:
+        selected_entity_row = entity_match.iloc[0]
+    else:
+        set_selected_entity(None)
+
+previous_summary = {}
+all_runs = list_screening_files()
+if selected_path:
+    current_idx = next((i for i, f in enumerate(all_runs) if f["path"] == selected_path), None)
+    if current_idx is not None and current_idx + 1 < len(all_runs):
+        previous_summary = load_run_summary(all_runs[current_idx + 1]["path"])
 
 # ── KPIs ──────────────────────────────────────────────────────────────────
 total     = len(df)
@@ -890,16 +1020,33 @@ licensed  = len(df[df["Risk Level"] == 0])
 new_ents  = len(df[df["Alert Status"] == "🆕 NEW"])   if "Alert Status" in df.columns else 0
 risk_up   = len(df[df["Alert Status"] == "📈 RISK INCREASED"]) if "Alert Status" in df.columns else 0
 
+prev_total = previous_summary.get("total", 0)
+prev_critical_high = previous_summary.get("critical_high", 0)
+prev_needs_review = previous_summary.get("needs_review", 0)
+prev_licensed = previous_summary.get("licensed", 0)
+prev_new = previous_summary.get("new_entities", 0)
+
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Entities Screened", f"{total:,}", help="Total entities after noise filtering")
-k2.metric("Critical / High",   critical + high,
-          delta=f"{(critical+high)/total*100:.0f}% of total" if total else None,
+delta_total, _ = metric_delta(total, prev_total)
+delta_risk, _ = metric_delta(critical + high, prev_critical_high)
+delta_review, _ = metric_delta(needs_rev, prev_needs_review)
+delta_licensed, _ = metric_delta(licensed, prev_licensed)
+delta_new, _ = metric_delta(new_ents, prev_new)
+
+k1.metric("Entities Screened", f"{total:,}", delta=delta_total, help="Total entities after noise filtering")
+k1.caption("Coverage is stable across this run." if total >= prev_total else "This run is smaller than the previous export.")
+k2.metric("Critical / High", critical + high,
+          delta=delta_risk or f"{(critical+high)/total*100:.0f}% of total",
           delta_color="inverse", help="Risk levels 4–5 requiring immediate attention")
-k3.metric("Needs Review",      needs_rev, help="Risk levels 2–3, monitor or review")
-k4.metric("Licensed / Clear",  licensed, help="Risk level 0, no action required")
-k5.metric("New Entities",      new_ents,
-          delta=f"↑ {risk_up} risk increased" if risk_up else None,
+k2.caption("Priority queue grew." if (critical + high) > prev_critical_high else "Priority queue is holding or improving.")
+k3.metric("Needs Review", needs_rev, delta=delta_review, help="Risk levels 2–3, monitor or review")
+k3.caption("Broad review workload remains elevated." if needs_rev > 0 else "No monitor-tier entities in this run.")
+k4.metric("Licensed / Clear", licensed, delta=delta_licensed, help="Risk level 0, no action required")
+k4.caption("Clear matches improved." if licensed >= prev_licensed else "Fewer clear matches than the last run.")
+k5.metric("New Entities", new_ents,
+          delta=delta_new or (f"↑ {risk_up} risk increased" if risk_up else None),
           delta_color="inverse", help="Entities not seen in prior run")
+k5.caption("New intake needs triage." if new_ents else ("Risk increases flagged." if risk_up else "No fresh additions detected."))
 
 st.markdown("---")
 
@@ -998,29 +1145,38 @@ with tab_search:
         contains = [b for b in all_brands if q in b.lower() and b not in starts]
         return (starts + contains)[:12]
 
-    # ── Filter toolbar ────────────────────────────────────────────────────
-    fc1, fc2, fc3 = st.columns([1.4, 1, 1])
+    st.markdown('<div class="filter-shell">', unsafe_allow_html=True)
+    filter_cols = st.columns([1.8, 1, 1, 0.72])
 
-    with fc1:
+    with filter_cols[0]:
+        st.markdown('<div class="filter-label">Search Entity</div>', unsafe_allow_html=True)
         if HAS_SEARCHBOX:
-            selected_brand = st_searchbox(search_brands, placeholder="Search entity or brand…",
+            selected_brand = st_searchbox(search_brands, placeholder="Search by brand, wallet, exchange, or partner name…",
                                           key="brand_searchbox", clear_on_submit=False)
         else:
             raw = st.selectbox("Brand", ["— All —"] + all_brands, index=0, label_visibility="collapsed")
             selected_brand = None if raw == "— All —" else raw
+        st.markdown('<div class="helper-note">Search is the fastest way to jump to one entity and open its review panel.</div>', unsafe_allow_html=True)
 
-    with fc2:
-        risk_opts   = sorted(df["Risk Level"].dropna().unique().tolist(), reverse=True)
+    with filter_cols[1]:
+        st.markdown('<div class="filter-label">Risk Filter</div>', unsafe_allow_html=True)
+        risk_opts = sorted(df["Risk Level"].dropna().unique().tolist(), reverse=True)
         risk_filter = st.multiselect("Risk Level", options=risk_opts,
                                      format_func=lambda x: RISK_META.get(int(x),{}).get("label", str(x)),
                                      placeholder="All risk levels", label_visibility="collapsed",
                                      key="risk_filter")
 
-    with fc3:
-        reg_opts   = sorted(df["Regulator Scope"].dropna().unique().tolist()) if "Regulator Scope" in df.columns else []
+    with filter_cols[2]:
+        st.markdown('<div class="filter-label">Regulator</div>', unsafe_allow_html=True)
+        reg_opts = sorted(df["Regulator Scope"].dropna().unique().tolist()) if "Regulator Scope" in df.columns else []
         reg_filter = st.multiselect("Regulator", options=reg_opts,
                                     placeholder="All regulators", label_visibility="collapsed",
                                     key="reg_filter")
+
+    with filter_cols[3]:
+        st.markdown('<div class="filter-label">Sort</div>', unsafe_allow_html=True)
+        sort_by = st.selectbox("Sort by", ["Risk ↓","Risk ↑","Name A–Z","Confidence ↓"],
+                               label_visibility="collapsed", key="sort_sel")
 
     # ── Quick-filter chips ────────────────────────────────────────────────
     CHIPS = [
@@ -1043,7 +1199,6 @@ with tab_search:
         st.session_state.page = 1
         st.rerun()
 
-    # ── Active filter summary ─────────────────────────────────────────────
     active_filters = []
     if selected_brand:   active_filters.append(f'"{selected_brand}"')
     if risk_filter:      active_filters.extend([RISK_META.get(int(r),{}).get("label",str(r)) for r in risk_filter])
@@ -1053,15 +1208,21 @@ with tab_search:
         active_filters.append(chip_label)
 
     if active_filters:
-        chips_html = " ".join(f'<span class="filter-chip">{f} ×</span>' for f in active_filters)
-        clear_all_note = f'<span style="color:#E11D48;font-size:10px;font-weight:700;cursor:pointer;margin-left:6px;">✕ Clear all ({len(active_filters)})</span>'
-        st.markdown(f'<div style="margin:6px 0 10px 0;">{chips_html}{clear_all_note}</div>', unsafe_allow_html=True)
-
-    # ── Sorting ───────────────────────────────────────────────────────────
-    sort_col1, sort_col2 = st.columns([3, 1])
-    with sort_col2:
-        sort_by = st.selectbox("Sort by", ["Risk ↓","Risk ↑","Name A–Z","Confidence ↓"],
-                               label_visibility="collapsed", key="sort_sel")
+        st.markdown('<div class="active-filter-bar">', unsafe_allow_html=True)
+        st.markdown(" ".join(f'<span class="filter-chip">{f}</span>' for f in active_filters), unsafe_allow_html=True)
+        if st.button(f"Clear all ({len(active_filters)})", key="clear_all_filters"):
+            st.session_state.active_chip = None
+            st.session_state.risk_filter = []
+            st.session_state.reg_filter = []
+            if "brand_searchbox" in st.session_state:
+                st.session_state["brand_searchbox"] = None
+            st.session_state.page = 1
+            set_selected_entity(None)
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="helper-note">Use search plus one or two filters to narrow the review queue quickly.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ── Apply filters ─────────────────────────────────────────────────────
     filtered = df.copy()
@@ -1099,33 +1260,46 @@ with tab_search:
         <div class="empty-state">
           <div class="icon">🔍</div>
           <div class="title">No entities found</div>
-          <div class="desc">Try adjusting your search query or clearing some filters.</div>
+          <div class="desc">Try clearing filters, searching by a shorter brand name, or switching to a different run in the sidebar.</div>
         </div>""", unsafe_allow_html=True)
     else:
-        # ── Pagination ────────────────────────────────────────────────────
         per_page    = 25
         total_pages = max(1, (len(filtered) + per_page - 1) // per_page)
         if st.session_state.page > total_pages: st.session_state.page = 1
 
-        rc_l, rc_r = st.columns([3, 1])
-        rc_l.caption(f"**{len(filtered):,}** of **{total:,}** entities")
-        rc_r.caption(f"Page **{st.session_state.page}** / **{total_pages}**")
-
         start   = (st.session_state.page - 1) * per_page
         page_df = filtered.iloc[start: start + per_page]
-        st.markdown("""
-        <div class="result-shell">
-          <div class="result-head">
-            <span>Entity</span>
-            <span>Classification</span>
-            <span>Risk / Confidence</span>
-            <span>Register Match</span>
-            <span>Actions</span>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-        for _, row in page_df.iterrows():
-            render_search_result(row)
+        results_col, detail_col = st.columns([1.7, 0.95], vertical_alignment="top")
+        with results_col:
+            rc_l, rc_r = st.columns([3, 1.2])
+            rc_l.caption(f"**{len(filtered):,}** of **{total:,}** entities")
+            rc_r.caption(f"Page **{st.session_state.page}** / **{total_pages}**")
+            st.markdown("""
+            <div class="result-shell">
+              <div class="result-head">
+                <span>Entity</span>
+                <span>Classification</span>
+                <span>Risk / Confidence</span>
+                <span>Register Match</span>
+                <span>Actions</span>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
+            for _, row in page_df.iterrows():
+                render_search_result(row, selected_entity_brand)
+
+        with detail_col:
+            if selected_entity_row is not None:
+                render_entity_panel(selected_entity_row, closeable=True)
+            else:
+                st.markdown(f"""
+                <div class="drawer-panel">
+                  <div class="section-title">Entity Detail</div>
+                  <div style="color:{c['text']};font-size:15px;font-weight:800;margin:6px 0;">Choose a row to inspect it</div>
+                  <div style="color:{c['text_muted']};font-size:12px;line-height:1.7;">
+                    Click any result card or use the primary <b>Open detail</b> button to pin an entity here. From this panel you can review rationale, open the full dialog, and log workflow actions.
+                  </div>
+                </div>""", unsafe_allow_html=True)
 
         # ── Pagination controls ───────────────────────────────────────────
         pc1,pc2,pc3,pc4,pc5 = st.columns([1,1,4,1,1])
@@ -1185,16 +1359,16 @@ with tab_insights:
             subtitleColor=c["text_dim"], subtitleFontSize=10,
         )
 
-    def bar_chart(series, title, subtitle, color="#C9A84C", rotate=-30, height=240):
+    def bar_chart(series, title, subtitle, color="#C9A84C", height=280):
         if series.empty:
             st.markdown(f'<div class="empty-state"><div class="icon">📊</div><div class="title">{title}</div><div class="desc">No data available</div></div>', unsafe_allow_html=True)
             return
         df_c = series.reset_index(); df_c.columns = ["label","value"]
         chart = (alt.Chart(df_c)
-            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, opacity=0.9)
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, opacity=0.9)
             .encode(
-                x=alt.X("label:N", sort="-y", axis=_ax(labelAngle=rotate)),
-                y=alt.Y("value:Q", axis=_ax(title="Count", grid=True)),
+                y=alt.Y("label:N", sort="-x", axis=_ax(labelAngle=0)),
+                x=alt.X("value:Q", axis=_ax(title="Count", grid=True)),
                 color=alt.value(color),
                 tooltip=["label:N", alt.Tooltip("value:Q", title="Count")],
             )
