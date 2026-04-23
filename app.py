@@ -1,3 +1,7 @@
+# =============================
+# UAE Regulatory Screening (FINAL VERSION)
+# =============================
+
 from __future__ import annotations
 import glob, io, re
 from datetime import datetime
@@ -13,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── DATA DIRECTORY ─────────────────────────────────────
+# ── DATA DIR (FIXED FOR CLOUD) ─────────────────────────
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -31,19 +35,24 @@ st.markdown("""
 footer {visibility:hidden;}
 
 .main-header {
-    background: linear-gradient(135deg, #1F3864, #2E5090);
-    color: white;
-    padding: 1.5rem;
-    border-radius: 12px;
-    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #1F3864 0%, #2E5090 100%);
+    color: white; padding: 1.5rem;
+    border-radius: 12px; margin-bottom: 1rem;
 }
 
 .company-card {
     background:white;
     border:1px solid #E5E7EB;
-    border-radius:10px;
+    border-radius:12px;
     padding:1rem;
-    margin-bottom:0.5rem;
+    margin-bottom:0.75rem;
+    box-shadow:0 2px 6px rgba(0,0,0,0.05);
+}
+
+.company-card:hover {
+    transform: translateY(-2px);
+    box-shadow:0 6px 20px rgba(0,0,0,0.1);
+    transition:0.2s;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -69,17 +78,41 @@ def list_files():
 
 def load_data(path):
     try:
-        df = pd.read_excel(path, sheet_name="📋 All Results")
+        return pd.read_excel(path, sheet_name="📋 All Results")
     except:
-        try:
-            df = pd.read_excel(path)
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
-            return pd.DataFrame()
-    return df
+        return pd.read_excel(path)
 
-def safe_col(df, col):
+def safe(df, col):
     return col in df.columns
+
+def render_card(row):
+    risk = int(row.get("Risk Level", 2))
+    color = {5:"#991B1B",4:"#B91C1C",3:"#92400E",2:"#1E40AF",0:"#065F46"}.get(risk)
+
+    st.markdown(f"""
+    <div class="company-card">
+        <div style="display:flex;justify-content:space-between;">
+            <div>
+                <b>{row.get("Brand","")}</b><br>
+                <span style="color:#6B7280;font-size:0.8rem;">
+                    {row.get("Service Type","")} · {row.get("Regulator Scope","")}
+                </span>
+                <p style="font-size:0.85rem;margin-top:0.4rem;">
+                    {str(row.get("Rationale",""))[:200]}
+                </p>
+            </div>
+            <div style="text-align:right;">
+                <span style="background:{color};color:white;padding:4px 10px;border-radius:10px;font-size:0.75rem;">
+                    Risk {risk}
+                </span>
+                <br>
+                <span style="font-size:0.75rem;color:#6B7280;">
+                    {row.get("Action Required","")}
+                </span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ── SIDEBAR ────────────────────────────────────────────
 st.sidebar.markdown("### 🛡️ UAE Screening")
@@ -89,18 +122,17 @@ selected_path = None
 
 if files:
     options = {f["timestamp"].strftime("%Y-%m-%d %H:%M"): f["path"] for f in files}
-    choice = st.sidebar.selectbox("Select Run:", list(options.keys()))
-    selected_path = options[choice]
+    selected_path = st.sidebar.selectbox("Select Run:", list(options.keys()))
+    selected_path = options[selected_path]
 
 # ADMIN UPLOAD
 if IS_ADMIN:
     st.sidebar.markdown("---")
     uploaded = st.sidebar.file_uploader("Upload Excel", type=["xlsx"])
     if uploaded:
-        save_path = DATA_DIR / uploaded.name
-        with open(save_path, "wb") as f:
+        with open(DATA_DIR / uploaded.name, "wb") as f:
             f.write(uploaded.getbuffer())
-        st.success("Uploaded successfully")
+        st.success("Uploaded")
         st.rerun()
 
 # ── HEADER ─────────────────────────────────────────────
@@ -111,76 +143,47 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-if selected_path is None:
+if not selected_path:
     st.warning("Upload a file to start.")
     st.stop()
 
 df = load_data(selected_path)
 
-if df.empty:
-    st.error("File is empty or invalid.")
-    st.stop()
-
-# ── SAFE KPI CALCULATIONS ──────────────────────────────
+# ── KPIs ───────────────────────────────────────────────
 total = len(df)
+high_risk = len(df[df["Risk Level"] >= 4]) if safe(df,"Risk Level") else 0
+risk_up = len(df[df["Alert Status"]=="📈 RISK INCREASED"]) if safe(df,"Alert Status") else 0
 
-if safe_col(df, "Risk Level"):
-    high_risk = len(df[df["Risk Level"] >= 4])
-else:
-    high_risk = 0
-
-if safe_col(df, "Alert Status"):
-    risk_up = len(df[df["Alert Status"] == "📈 RISK INCREASED"])
-else:
-    risk_up = 0
-
-# ── SMART SUMMARY ──────────────────────────────────────
 st.info(f"⚠️ {high_risk} high-risk entities detected | {risk_up} increasing risk")
 
-# ── KPI DISPLAY ────────────────────────────────────────
-k1, k2 = st.columns(2)
-k1.metric("Total Entities", total)
-k2.metric("High Risk", high_risk)
+c1,c2 = st.columns(2)
+c1.metric("Total", total)
+c2.metric("High Risk", high_risk)
 
-# ── QUICK FILTERS ──────────────────────────────────────
-c1, c2, c3 = st.columns(3)
+# ── TABS ───────────────────────────────────────────────
+tab1, tab2 = st.tabs(["🏠 Home", "🔍 Search"])
 
-if c1.button("🔴 High Risk"):
-    if safe_col(df, "Risk Level"):
-        df = df[df["Risk Level"] >= 4]
+# HOME
+with tab1:
+    st.subheader("Top High-Risk Entities")
+    top = df[df["Risk Level"] >= 4].head(10) if safe(df,"Risk Level") else df.head(10)
 
-if c2.button("🆕 New"):
-    if safe_col(df, "Alert Status"):
-        df = df[df["Alert Status"] == "🆕 NEW"]
+    for _, row in top.iterrows():
+        render_card(row)
 
-if c3.button("₿ Crypto"):
-    if safe_col(df, "Service Type"):
-        df = df[df["Service Type"].astype(str).str.contains("crypto", case=False, na=False)]
+# SEARCH
+with tab2:
+    query = st.text_input("Search company")
 
-# ── SEARCH ─────────────────────────────────────────────
-query = st.text_input("🔍 Search company")
+    filtered = df.copy()
 
-if query and safe_col(df, "Brand"):
-    df = df[df["Brand"].astype(str).str.contains(query, case=False, na=False)]
+    if query and safe(df,"Brand"):
+        filtered = filtered[df["Brand"].str.contains(query, case=False, na=False)]
 
-# ── TABLE (SAFE DISPLAY) ───────────────────────────────
-def highlight(row):
-    if "Risk Level" in row and row["Risk Level"] >= 4:
-        return ["background-color: #fee2e2"] * len(row)
-    return [""] * len(row)
+    st.dataframe(filtered, use_container_width=True)
 
-try:
-    styled_df = df.style.apply(highlight, axis=1)
-    st.dataframe(styled_df, use_container_width=True)
-except:
-    st.dataframe(df, use_container_width=True)
+# DOWNLOAD
+csv = df.to_csv(index=False).encode("utf-8-sig")
+st.download_button("Download CSV", csv)
 
-# ── DOWNLOAD ───────────────────────────────────────────
-try:
-    csv = df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("⬇️ Download CSV", csv)
-except:
-    pass
-
-# ── FOOTER ─────────────────────────────────────────────
 st.caption("Internal tool – not a legal determination")
