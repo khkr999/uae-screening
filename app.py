@@ -290,6 +290,111 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
 .entity-card .rationale {{ color:{c['text_dim']}; font-size:0.84rem; line-height:1.55; }}
 .entity-card .action-note {{ color:{c['text_muted']}; font-size:0.76rem; border-left:2px solid {c['gold_border']}; padding-left:7px; margin-top:6px; }}
 
+/* Search results list */
+.result-shell {{
+    background:linear-gradient(180deg,{c['card_bg']} 0%, rgba(12,18,40,0.92) 100%);
+    border:1px solid {c['border']};
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:0 10px 30px rgba(0,0,0,0.18);
+}}
+.result-head {{
+    display:grid;
+    grid-template-columns: minmax(240px, 1.35fr) minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(160px, 1fr) 98px;
+    gap:14px;
+    padding:12px 16px;
+    background:{c['raised_bg']};
+    border-bottom:1px solid {c['border']};
+}}
+.result-head span {{
+    color:{c['text_muted']};
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+}}
+.result-row {{
+    display:grid;
+    grid-template-columns: minmax(240px, 1.35fr) minmax(120px, 0.7fr) minmax(150px, 0.9fr) minmax(160px, 1fr) 98px;
+    gap:14px;
+    padding:16px;
+    margin-top:10px;
+    background:{c['card_bg']};
+    border:1px solid {c['border']};
+    border-radius:16px;
+    transition:background 0.18s ease, transform 0.18s ease;
+    box-shadow:0 8px 22px rgba(0,0,0,0.14);
+}}
+.result-row:hover {{ background:{c['raised_bg']}; }}
+.result-brand {{
+    color:{c['text']};
+    font-size:14px;
+    font-weight:800;
+    margin-bottom:8px;
+}}
+.result-meta {{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-bottom:8px;
+}}
+.result-tag {{
+    display:inline-flex;
+    align-items:center;
+    padding:3px 8px;
+    border-radius:999px;
+    background:{c['gold_dim']};
+    border:1px solid {c['gold_border']};
+    color:{c['gold']};
+    font-size:10px;
+    font-weight:700;
+}}
+.result-rationale {{
+    color:{c['text_dim']};
+    font-size:12px;
+    line-height:1.6;
+}}
+.result-label {{
+    color:{c['text_muted']};
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:0.09em;
+    text-transform:uppercase;
+    margin-bottom:6px;
+}}
+.result-value {{
+    color:{c['text']};
+    font-size:12px;
+    line-height:1.5;
+}}
+.result-action {{
+    color:{c['text']};
+    font-size:11px;
+    line-height:1.55;
+    background:rgba(255,255,255,0.02);
+    border:1px solid {c['border']};
+    border-radius:10px;
+    padding:10px 12px;
+}}
+
+@media (max-width: 1100px) {{
+    .result-head {{ display:none; }}
+    .result-shell {{
+        background:transparent;
+        border:none;
+        box-shadow:none;
+        overflow:visible;
+    }}
+    .result-row {{
+        grid-template-columns: 1fr;
+        gap:10px;
+        background:{c['card_bg']};
+        border:1px solid {c['border']};
+        border-radius:14px;
+        margin-bottom:10px;
+    }}
+}}
+
 /* Section titles */
 .section-title {{ color:{c['text']}; font-size:11px; font-weight:800; letter-spacing:0.07em; text-transform:uppercase; margin:0 0 0.6rem 0; }}
 
@@ -485,6 +590,57 @@ def render_card(row: pd.Series):
         </div>
       </div>
     </div>""", unsafe_allow_html=True)
+
+def render_search_result(row: pd.Series):
+    level = int(row.get("Risk Level", 2))
+    brand = str(row.get("Brand", ""))
+    classification = str(row.get("Classification", "")) or "Unclassified"
+    regulator = str(row.get("Regulator Scope", "")) or "Unspecified"
+    service = str(row.get("Service Type", "")) or "Unspecified"
+    matched = str(row.get("Matched Entity (Register)", "")) or "No direct register match"
+    action = str(row.get("Action Required", "")) or "Review recommended"
+    rationale = str(row.get("Rationale", "")).strip()
+    rationale = rationale[:180] + "…" if len(rationale) > 180 else rationale
+    conf = str(row.get("Confidence", "")).strip() or "—"
+    source_url = str(row.get("Top Source URL", "")).strip()
+    alert = alert_badge_html(str(row.get("Alert Status", "")))
+
+    st.markdown(f"""
+    <div class="result-row">
+      <div>
+        <div class="result-brand">{brand} {alert}</div>
+        <div class="result-meta">
+          <span class="result-tag">{service}</span>
+          <span class="result-tag">{regulator}</span>
+        </div>
+        <div class="result-rationale">{rationale or "No rationale available."}</div>
+      </div>
+      <div>
+        <div class="result-label">Classification</div>
+        <div class="result-value">{classification}</div>
+      </div>
+      <div>
+        <div class="result-label">Risk / Confidence</div>
+        <div class="result-value">{risk_badge_html(level)}</div>
+        <div class="result-value" style="margin-top:8px;">Confidence: <b>{conf}%</b></div>
+      </div>
+      <div>
+        <div class="result-label">Register Match</div>
+        <div class="result-value">{matched}</div>
+        <div class="result-action" style="margin-top:10px;">{action}</div>
+      </div>
+      <div>
+        <div class="result-label">Actions</div>
+        <div class="result-value">Review this entity</div>
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+    action_cols = st.columns([1, 1, 3.4])
+    if action_cols[0].button("Open detail", key=f"search_detail_{row.name}", use_container_width=True):
+        show_entity_detail(row)
+    if source_url.startswith("http"):
+        action_cols[1].link_button("Source", source_url, use_container_width=True)
+    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
 # ── ENTITY DETAIL DIALOG ──────────────────────────────────────────────────
 @st.dialog("Entity Detail", width="large")
@@ -955,41 +1111,21 @@ with tab_search:
         rc_l.caption(f"**{len(filtered):,}** of **{total:,}** entities")
         rc_r.caption(f"Page **{st.session_state.page}** / **{total_pages}**")
 
-        # ── Table ─────────────────────────────────────────────────────────
-        display_cols = [c_ for c_ in [
-            "Brand","Classification","Risk Level","Action Required",
-            "Confidence","Regulator Scope","Service Type",
-            "Matched Entity (Register)","Rationale","Top Source URL",
-        ] if c_ in filtered.columns]
-
         start   = (st.session_state.page - 1) * per_page
         page_df = filtered.iloc[start: start + per_page]
-
-        col_config = {
-            "Top Source URL": st.column_config.LinkColumn("↗ Source", width="small"),
-            "Risk Level":     st.column_config.NumberColumn("Risk", format="%d", min_value=0, max_value=5, width="small"),
-            "Brand":          st.column_config.TextColumn("Brand", width="medium"),
-            "Rationale":      st.column_config.TextColumn("Rationale", width="large"),
-            "Action Required":st.column_config.TextColumn("Action Required", width="large"),
-            "Confidence":     st.column_config.ProgressColumn("Conf.", min_value=0, max_value=100, format="%d%%", width="small"),
-        }
-
-        event = st.dataframe(
-            page_df[display_cols],
-            use_container_width=True,
-            height=min(540, 60 + len(page_df) * 38),
-            hide_index=True,
-            column_config=col_config,
-            selection_mode="single-row",
-            on_select="rerun",
-            key="entity_table",
-        )
-
-        # ── Row click → detail panel ──────────────────────────────────────
-        if event.selection.rows:
-            idx = event.selection.rows[0]
-            selected_row = page_df.iloc[idx]
-            show_entity_detail(selected_row)
+        st.markdown("""
+        <div class="result-shell">
+          <div class="result-head">
+            <span>Entity</span>
+            <span>Classification</span>
+            <span>Risk / Confidence</span>
+            <span>Register Match</span>
+            <span>Actions</span>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+        for _, row in page_df.iterrows():
+            render_search_result(row)
 
         # ── Pagination controls ───────────────────────────────────────────
         pc1,pc2,pc3,pc4,pc5 = st.columns([1,1,4,1,1])
