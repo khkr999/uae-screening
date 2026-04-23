@@ -1,5 +1,5 @@
 """
-UAE Regulatory Screening – Internal Search UI (v3)
+UAE Regulatory Screening – Internal Search UI (v4 · Gold/Navy redesign)
 """
 from __future__ import annotations
 import glob, io, re
@@ -9,7 +9,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-# Google-style autocomplete search box
 try:
     from streamlit_searchbox import st_searchbox
     HAS_SEARCHBOX = True
@@ -23,251 +22,349 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── DESIGN SYSTEM ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .main-header {
-        background: linear-gradient(135deg, #1F3864 0%, #2E5090 100%);
-        color: white; padding: 1.5rem 2rem; border-radius: 12px;
-        margin-bottom: 1.5rem; box-shadow: 0 4px 12px rgba(31,56,100,0.15);
-    }
-    .main-header h1 { margin:0; color:white; font-size:1.8rem; font-weight:700; }
-    .main-header p  { margin:0.25rem 0 0 0; color:rgba(255,255,255,0.85); font-size:0.95rem; }
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap');
 
-    [data-testid="stMetric"] {
-        background:white; padding:1rem; border-radius:10px;
-        border:1px solid #E5E7EB; box-shadow:0 1px 3px rgba(0,0,0,0.05);
-    }
-    [data-testid="stMetricLabel"]  { font-size:0.85rem !important; color:#6B7280 !important; font-weight:500 !important; }
-    [data-testid="stMetricValue"]  { font-size:1.8rem !important; font-weight:700 !important; }
+/* Base */
+html, body, [class*="css"], .stApp {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    background-color: #07091C !important;
+    color: #D8E1F2 !important;
+}
 
-    .pill { display:inline-block; padding:3px 10px; border-radius:12px; font-size:0.8rem; font-weight:600; white-space:nowrap; }
-    .pill-critical { background:#FEE2E2; color:#991B1B; }
-    .pill-high     { background:#FED7AA; color:#9A3412; }
-    .pill-medium   { background:#FEF3C7; color:#92400E; }
-    .pill-low      { background:#DBEAFE; color:#1E40AF; }
-    .pill-licensed { background:#D1FAE5; color:#065F46; }
+#MainMenu, footer, header { visibility: hidden; }
 
-    .company-card {
-        background:white; border:1px solid #E5E7EB; border-radius:10px;
-        padding:1.25rem; margin-bottom:0.75rem; box-shadow:0 1px 3px rgba(0,0,0,0.04);
-    }
-    .company-card h4 { margin:0 0 0.25rem 0; color:#1F2937; font-size:1.05rem; }
-    .company-card .meta { color:#6B7280; font-size:0.82rem; margin-bottom:0.4rem; }
+/* App background */
+.stApp {
+    background: #07091C !important;
+}
 
-    /* Chip buttons — active state via CSS class */
-    .chip-active button { background:#1F3864 !important; color:white !important; border-color:#1F3864 !important; }
+.block-container {
+    padding-top: 1.2rem !important;
+    padding-bottom: 2rem !important;
+    max-width: 1480px !important;
+}
 
-    /* Force uniform button heights in horizontal rows (prevents chip misalignment) */
-    div[data-testid="stHorizontalBlock"] .stButton button {
-        height: 38px !important;
-        min-height: 38px !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        font-size: 0.82rem !important;
-        padding: 0 0.75rem !important;
-    }
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background: #040610 !important;
+    border-right: 1px solid rgba(201,168,76,0.15) !important;
+}
+[data-testid="stSidebar"] * { color: #8896B4 !important; }
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] .stSubheader { color: #C9A84C !important; }
+[data-testid="stSidebar"] .stCaption { color: #4E5E7A !important; font-size: 0.78rem !important; }
 
-    [data-baseweb="tab-list"] { gap:0.5rem; }
-    [data-baseweb="tab"] { padding:0.5rem 1rem; border-radius:8px; font-weight:500; }
-    [data-baseweb="tab"][aria-selected="true"] { background:#1F3864 !important; color:white !important; }
+/* Selectbox / inputs */
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div,
+.stTextInput > div > div {
+    background: #0C1228 !important;
+    border-color: rgba(201,168,76,0.2) !important;
+    border-radius: 10px !important;
+    color: #D8E1F2 !important;
+}
+div[data-baseweb="select"] svg { fill: #C9A84C !important; }
 
-    /* Tighter dataframe rows */
-    [data-testid="stDataFrame"] td { padding: 6px 8px !important; font-size:0.88rem; }
-    [data-testid="stDataFrame"] th { padding: 8px 8px !important; font-size:0.88rem; background:#F9FAFB; }
+/* Multiselect */
+.stMultiSelect > div > div {
+    background: #0C1228 !important;
+    border-color: rgba(201,168,76,0.2) !important;
+    border-radius: 10px !important;
+}
+[data-baseweb="tag"] {
+    background: rgba(201,168,76,0.15) !important;
+    color: #C9A84C !important;
+}
 
-    /* Autocomplete dropdown styling */
-    .suggestion-box {
-        background:white; border:1px solid #E5E7EB; border-radius:8px;
-        box-shadow:0 4px 12px rgba(0,0,0,0.08); margin-top:-0.5rem;
-        max-height:200px; overflow-y:auto;
-    }
-    .suggestion-item {
-        padding:0.5rem 1rem; cursor:pointer; font-size:0.9rem; color:#374151;
-        border-bottom:1px solid #F3F4F6;
-    }
-    .suggestion-item:hover { background:#EFF6FF; color:#1E40AF; }
+/* Metrics */
+[data-testid="stMetric"] {
+    background: #0C1228 !important;
+    border: 1px solid rgba(201,168,76,0.13) !important;
+    border-top: 2px solid #C9A84C !important;
+    border-radius: 12px !important;
+    padding: 1rem 1.1rem !important;
+}
+[data-testid="stMetricLabel"] {
+    color: #7E8FAD !important;
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.07em !important;
+    text-transform: uppercase !important;
+}
+[data-testid="stMetricValue"] {
+    color: #D8E1F2 !important;
+    font-size: 1.9rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.03em !important;
+}
+[data-testid="stMetricDelta"] { font-size: 0.78rem !important; font-weight: 700 !important; }
 
-    #MainMenu {visibility:hidden;} footer {visibility:hidden;} header {visibility:hidden;}
+/* Tabs */
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
+    background: transparent !important;
+    border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+    gap: 0 !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab"] {
+    background: transparent !important;
+    color: #7E8FAD !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    padding: 0.6rem 1.1rem !important;
+    border-radius: 0 !important;
+    border-bottom: 2px solid transparent !important;
+}
+[data-testid="stTabs"] [aria-selected="true"] {
+    color: #C9A84C !important;
+    border-bottom: 2px solid #C9A84C !important;
+    font-weight: 800 !important;
+    background: transparent !important;
+}
 
-    @media (max-width:768px) {
-        [data-testid="stMetricValue"] { font-size:1.4rem !important; }
-        .main-header h1 { font-size:1.4rem !important; }
-    }
+/* Buttons */
+div.stButton > button,
+.stDownloadButton button {
+    background: rgba(201,168,76,0.08) !important;
+    border: 1px solid rgba(201,168,76,0.25) !important;
+    border-radius: 10px !important;
+    color: #C9A84C !important;
+    font-weight: 700 !important;
+    font-size: 0.82rem !important;
+    transition: all 0.15s !important;
+}
+div.stButton > button:hover,
+.stDownloadButton button:hover {
+    background: rgba(201,168,76,0.16) !important;
+    border-color: rgba(201,168,76,0.5) !important;
+    transform: translateY(-1px) !important;
+}
+div.stButton > button:disabled {
+    opacity: 0.3 !important;
+    transform: none !important;
+}
+
+/* Dataframe */
+[data-testid="stDataFrame"] {
+    border-radius: 12px !important;
+    border: 1px solid rgba(201,168,76,0.13) !important;
+    overflow: hidden !important;
+}
+[data-testid="stDataFrame"] table {
+    background: #0C1228 !important;
+}
+[data-testid="stDataFrame"] th {
+    background: #111830 !important;
+    color: #7E8FAD !important;
+    font-size: 0.78rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.06em !important;
+    text-transform: uppercase !important;
+    border-bottom: 1px solid rgba(201,168,76,0.13) !important;
+    padding: 8px 10px !important;
+}
+[data-testid="stDataFrame"] td {
+    color: #D8E1F2 !important;
+    font-size: 0.84rem !important;
+    border-bottom: 1px solid rgba(255,255,255,0.04) !important;
+    padding: 7px 10px !important;
+}
+
+/* Bar chart */
+[data-testid="stVegaLiteChart"] { border-radius: 10px !important; }
+
+/* Info / warning / success */
+[data-testid="stAlert"] {
+    border-radius: 10px !important;
+    border-left-width: 3px !important;
+}
+
+/* Horizontal rule */
+hr { border-color: rgba(201,168,76,0.12) !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(201,168,76,0.2); border-radius: 99px; }
+
+/* Uniform chip-button heights */
+div[data-testid="stHorizontalBlock"] .stButton button {
+    height: 36px !important;
+    min-height: 36px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 0.8rem !important;
+    padding: 0 0.7rem !important;
+}
+
+/* Main-header card */
+.main-header {
+    background: linear-gradient(135deg, #0E1A3A 0%, #0C1228 60%, #111830 100%);
+    border: 1px solid rgba(201,168,76,0.18);
+    border-left: 3px solid #C9A84C;
+    color: #D8E1F2;
+    padding: 1.2rem 1.6rem;
+    border-radius: 14px;
+    margin-bottom: 1.4rem;
+}
+.main-header h1 { margin:0; color:#D8E1F2; font-size:1.6rem; font-weight:800; letter-spacing:-0.02em; }
+.main-header p  { margin:0.2rem 0 0; color:#7E8FAD; font-size:0.9rem; }
+.main-header .badge {
+    display:inline-block; background:rgba(201,168,76,0.12);
+    color:#C9A84C; border:1px solid rgba(201,168,76,0.3);
+    border-radius:999px; padding:3px 10px; font-size:0.72rem; font-weight:800;
+    letter-spacing:0.08em; margin-top:0.5rem;
+}
+
+/* Risk pills */
+.pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:0.75rem; font-weight:800; white-space:nowrap; letter-spacing:0.04em; }
+.pill-critical { background:rgba(225,29,72,0.12);  color:#E11D48; border:1px solid rgba(225,29,72,0.3); }
+.pill-high     { background:rgba(249,115,22,0.12); color:#F97316; border:1px solid rgba(249,115,22,0.3); }
+.pill-medium   { background:rgba(212,160,23,0.12); color:#D4A017; border:1px solid rgba(212,160,23,0.3); }
+.pill-low      { background:rgba(74,127,212,0.12); color:#4A7FD4; border:1px solid rgba(74,127,212,0.3); }
+.pill-licensed { background:rgba(16,185,129,0.12); color:#10B981; border:1px solid rgba(16,185,129,0.3); }
+
+/* Entity cards */
+.company-card {
+    background: #0C1228;
+    border: 1px solid rgba(201,168,76,0.12);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+}
+.company-card:hover { border-color: rgba(201,168,76,0.35); }
+.company-card h4 { margin:0 0 3px 0; color:#D8E1F2; font-size:0.98rem; font-weight:800; }
+.company-card .meta { color:#7E8FAD; font-size:0.8rem; margin-bottom:0.3rem; }
+.company-card .rationale { color:#8896B4; font-size:0.84rem; line-height:1.55; }
+.company-card .action-note {
+    color:#4E5E7A; font-size:0.76rem; margin-top:3px;
+    border-left:2px solid rgba(201,168,76,0.3); padding-left:7px; margin-top:6px;
+}
+
+/* Section titles */
+.section-title {
+    color: #D8E1F2;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.6rem 0;
+}
+
+@media (max-width: 768px) {
+    [data-testid="stMetricValue"] { font-size:1.5rem !important; }
+    .main-header h1 { font-size:1.3rem !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── CONFIG ───────────────────────────────────────────────────────────────
+# ── CONFIG ────────────────────────────────────────────────────────────────
 DATA_DIR = Path.home() / "Downloads" / "UAE_Screening"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 RISK_META = {
-    5: {"label": "🔴 Critical",  "pill": "pill-critical"},
-    4: {"label": "🔴 High",      "pill": "pill-high"},
-    3: {"label": "🟠 Medium",    "pill": "pill-high"},
-    2: {"label": "🟡 Low",       "pill": "pill-medium"},
-    1: {"label": "⚪ Very Low",  "pill": "pill-low"},
-    0: {"label": "🟢 Licensed",  "pill": "pill-licensed"},
+    5: {"label": "Critical",  "pill": "pill-critical"},
+    4: {"label": "High",      "pill": "pill-high"},
+    3: {"label": "Medium",    "pill": "pill-medium"},
+    2: {"label": "Monitor",   "pill": "pill-low"},
+    1: {"label": "Low",       "pill": "pill-low"},
+    0: {"label": "Licensed",  "pill": "pill-licensed"},
 }
 
-# ── NOISE FILTER (aggressive) ────────────────────────────────────────────
-# Exact brand names to strip (lowercased)
+# ── NOISE FILTER ──────────────────────────────────────────────────────────
 NOISE_BRANDS = {
-    # from your screenshots
-    "rulebook", "the complete rulebook", "licensing", "centralbank",
-    "globenewswire", "globe newswire", "cbuae rulebook",
-    "insights for businesses", "insights", "businesses",
-    "2025 mobile development", "transforming payments",
-    "mobile development", "2026 business plan", "2026 rules",
-    "10 leaves", "10leaves", "aafs",
-    "money transfers", "companies law amendments", "gccbusinesswatch",
-    "financialit", "visamiddleeast", "khaleejtimes", "khaleej times",
-    "tekrevol", "trriple payments", "hwala", "aundigital",
-    "gulfnews", "gulf news", "thenational", "the national",
-    "arabianbusiness", "arabian business", "zawya", "wam",
-    "reuters", "bloomberg", "ft.com", "cnbc", "forbes",
-    "crunchbase", "techcrunch", "wikipedia", "medium",
-    # navigation / web boilerplate
-    "page", "home", "about", "contact", "terms", "privacy",
-    "privacy policy", "cookie policy", "cookies",
-    "fintech news", "press release", "media release", "news release",
-    "blog", "blog post", "white paper", "whitepaper", "report",
-    "research", "survey", "study", "conference", "event",
-    "webinar", "podcast", "linkedin", "twitter", "facebook",
-    "instagram", "youtube", "warning", "'s warning",
-    "vasps licensing process", "licensing process",
-    "& vasps licensing process in", "& vasps licensing process",
-    "& vasps", "vasps", "rules", "guide", "overview",
-    "trends", "plan", "leaves", "news", "article", "articles",
-    "introduction", "summary", "conclusion", "references",
-    "documentation", "docs", "help", "support", "faq", "faqs",
-    "sitemap", "copyright", "company", "companies", "law",
-    "amendments", "amendment", "watch", "magazine", "journal",
-    "newsletter", "directory", "list", "index", "database",
-    "agency", "institute", "association", "council", "authority",
-    "commission", "committee", "task force",
+    "rulebook","the complete rulebook","licensing","centralbank",
+    "globenewswire","globe newswire","cbuae rulebook",
+    "insights for businesses","insights","businesses",
+    "2025 mobile development","transforming payments",
+    "mobile development","2026 business plan","2026 rules",
+    "10 leaves","10leaves","aafs",
+    "money transfers","companies law amendments","gccbusinesswatch",
+    "financialit","visamiddleeast","khaleejtimes","khaleej times",
+    "tekrevol","trriple payments","hwala","aundigital",
+    "gulfnews","gulf news","thenational","the national",
+    "arabianbusiness","arabian business","zawya","wam",
+    "reuters","bloomberg","ft.com","cnbc","forbes",
+    "crunchbase","techcrunch","wikipedia","medium",
+    "page","home","about","contact","terms","privacy",
+    "privacy policy","cookie policy","cookies",
+    "fintech news","press release","media release","news release",
+    "blog","blog post","white paper","whitepaper","report",
+    "research","survey","study","conference","event",
+    "webinar","podcast","linkedin","twitter","facebook",
+    "instagram","youtube","warning","'s warning",
+    "vasps licensing process","licensing process",
+    "& vasps licensing process in","& vasps licensing process",
+    "& vasps","vasps","rules","guide","overview",
+    "trends","plan","leaves","news","article","articles",
+    "introduction","summary","conclusion","references",
+    "documentation","docs","help","support","faq","faqs",
+    "sitemap","copyright","company","companies","law",
+    "amendments","amendment","watch","magazine","journal",
+    "newsletter","directory","list","index","database",
+    "agency","institute","association","council","authority",
+    "commission","committee","task force",
 }
 
-# Regex patterns that indicate noise
 NOISE_PATTERNS = re.compile(
     r"^(\s*[&'\"\-–—]|\s*\d+[\.\)\s]|top \d+|best \d+|leading \d+|"
     r"guide to|how to|what is|list of|complete list|overview|"
     r"introduction|insights for|transforming|mobile development|"
     r"press release|whitepaper|business plan|licensing process|"
     r"warning|\d{4}\s|"
-    # domain-like fragments
     r".*\.(com|ae|net|org|io|co)$|"
-    # news/magazine/media sites
     r".*(news|times|watch|magazine|journal|newsletter|review|"
     r"press|media|blog|gazette|tribune|post|herald|daily|weekly)$)",
     re.I
 )
 
-# Generic financial/business words that on their own aren't real brand names
 GENERIC_ONLY_WORDS = {
-    "bank", "banks", "banking", "payment", "payments", "finance",
-    "financial", "wallet", "wallets", "exchange", "exchanges",
-    "crypto", "cryptocurrency", "trading", "investment", "investments",
-    "fintech", "regulation", "regulations", "regulatory",
-    "compliance", "license", "licenses", "licensing",
-    "money", "transfer", "transfers", "remittance", "remittances",
-    "loan", "loans", "lending", "credit", "debit", "card", "cards",
-    "digital", "mobile", "online", "virtual", "electronic",
-    "service", "services", "solution", "solutions", "platform",
-    "technology", "technologies", "app", "apps", "application",
-    "company", "companies", "corporation", "corp", "limited", "ltd",
-    "uae", "dubai", "abu", "dhabi", "emirates", "gulf", "middle",
-    "east", "gcc", "regional", "international", "global", "local",
+    "bank","banks","banking","payment","payments","finance",
+    "financial","wallet","wallets","exchange","exchanges",
+    "crypto","cryptocurrency","trading","investment","investments",
+    "fintech","regulation","regulations","regulatory",
+    "compliance","license","licenses","licensing",
+    "money","transfer","transfers","remittance","remittances",
+    "loan","loans","lending","credit","debit","card","cards",
+    "digital","mobile","online","virtual","electronic",
+    "service","services","solution","solutions","platform",
+    "technology","technologies","app","apps","application",
+    "company","companies","corporation","corp","limited","ltd",
+    "uae","dubai","abu","dhabi","emirates","gulf","middle",
+    "east","gcc","regional","international","global","local",
 }
 
-# Known news/media/blog domains that shouldn't be brands
 NEWS_MEDIA_HOSTS = {
-    "khaleejtimes", "gulfnews", "thenational", "arabianbusiness",
-    "zawya", "wam", "gccbusinesswatch", "globenewswire",
-    "financialit", "tekrevol", "visamiddleeast", "reuters",
-    "bloomberg", "ftcom", "cnbc", "forbes", "crunchbase",
-    "techcrunch", "wikipedia", "medium",
+    "khaleejtimes","gulfnews","thenational","arabianbusiness",
+    "zawya","wam","gccbusinesswatch","globenewswire",
+    "financialit","tekrevol","visamiddleeast","reuters",
+    "bloomberg","ftcom","cnbc","forbes","crunchbase",
+    "techcrunch","wikipedia","medium",
 }
-
 
 def is_noise_brand(brand: str) -> bool:
-    """Aggressive check — returns True if this brand looks like junk."""
-    if not brand or not isinstance(brand, str):
-        return True
+    if not brand or not isinstance(brand, str): return True
     b = brand.strip().lower()
-
-    # Empty or too short
-    if not b or len(b) < 3:
-        return True
-
-    # In noise blocklist
-    if b in NOISE_BRANDS:
-        return True
-
-    # Pattern match (numbers, domains, news sites)
-    if NOISE_PATTERNS.match(b):
-        return True
-
-    # Starts with special char
-    if re.match(r"^[\s&'\"\-–—_\.,;:]", brand):
-        return True
-
-    # Starts with digit
-    if b[0].isdigit():
-        return True
-
-    # Domain-like (contains a dot with tld-looking suffix)
-    if re.search(r"\.(com|ae|net|org|io|co|gov|edu)\b", b):
-        return True
-
-    # Known news/media host (stripped of spaces/punct)
+    if not b or len(b) < 3: return True
+    if b in NOISE_BRANDS: return True
+    if NOISE_PATTERNS.match(b): return True
+    if re.match(r"^[\s&'\"\-–—_\.,;:]", brand): return True
+    if b[0].isdigit(): return True
+    if re.search(r"\.(com|ae|net|org|io|co|gov|edu)\b", b): return True
     b_compact = re.sub(r"[^a-z0-9]", "", b)
-    if b_compact in NEWS_MEDIA_HOSTS:
-        return True
-
-    # Only generic words
+    if b_compact in NEWS_MEDIA_HOSTS: return True
     words = b.split()
-    if all(w in GENERIC_ONLY_WORDS for w in words):
-        return True
-
-    # Sentence-like (more than 5 words)
-    if len(words) > 5:
-        return True
-
-    # Contains sentence connectors (sentence-like phrase)
-    if re.search(
-        r"\b(and|or|the|in|on|of|for|with|to|by)\b.*"
-        r"\b(and|or|the|in|on|of|for|with|to|by)\b", b
-    ):
-        return True
-
-    # Ends with an article (incomplete phrase)
-    if b.rstrip('.').split()[-1] in {
-        "the", "a", "an", "of", "in", "on", "for", "to", "and", "or",
-        "by", "with", "from", "at", "as",
-    }:
-        return True
-
-    # Too many special chars (ratio of letters to total)
+    if all(w in GENERIC_ONLY_WORDS for w in words): return True
+    if len(words) > 5: return True
+    if re.search(r"\b(and|or|the|in|on|of|for|with|to|by)\b.*\b(and|or|the|in|on|of|for|with|to|by)\b", b): return True
+    if b.rstrip('.').split()[-1] in {"the","a","an","of","in","on","for","to","and","or","by","with","from","at","as"}: return True
     letters = sum(c.isalpha() for c in brand)
-    if letters < len(brand) * 0.5:
-        return True
-
-    # Single generic word (e.g. "Bank", "Payments", "Finance")
-    if len(words) == 1 and b in GENERIC_ONLY_WORDS:
-        return True
-
-    # Contains "news", "times", "watch", "blog" — likely a publication
-    if any(indicator in b for indicator in [
-        "news", "times", "watch", "magazine", "blog", "gazette",
-        "tribune", "herald", "daily", "weekly", "journal",
-        "newsletter", "review", "press", "media",
-    ]):
-        return True
-
+    if letters < len(brand) * 0.5: return True
+    if len(words) == 1 and b in GENERIC_ONLY_WORDS: return True
+    if any(ind in b for ind in ["news","times","watch","magazine","blog","gazette","tribune","herald","daily","weekly","journal","newsletter","review","press","media"]): return True
     return False
 
 # ── HELPERS ───────────────────────────────────────────────────────────────
@@ -275,29 +372,35 @@ def risk_pill(level) -> str:
     try: level = int(level)
     except: return '<span class="pill pill-low">Unknown</span>'
     m = RISK_META.get(level, RISK_META[2])
-    return f'<span class="pill {m["pill"]}">{m["label"]}</span>'
+    return f'<span class="pill {m["pill"]}">{m["label"]} · {level}</span>'
 
 def render_card(row):
     pill_html = risk_pill(row.get("Risk Level", 2))
-    url = row.get("Top Source URL", "")
-    link = f'<a href="{url}" target="_blank" style="font-size:0.8rem;">🔗 Source</a>' \
+    url  = row.get("Top Source URL", "")
+    link = f'<a href="{url}" target="_blank" style="font-size:0.76rem;color:#4A7FD4;text-decoration:none;">↗ Source</a>' \
            if url and str(url).startswith("http") else ""
     svc  = str(row.get("Service Type", ""))
     reg  = str(row.get("Regulator Scope", ""))
-    rat  = str(row.get("Rationale", ""))[:260]
+    rat  = str(row.get("Rationale", ""))[:280]
     act  = str(row.get("Action Required", ""))
+    alert = str(row.get("Alert Status", ""))
+    alert_html = ""
+    if "NEW" in alert:
+        alert_html = '<span style="background:rgba(34,197,94,0.1);color:#22C55E;border:1px solid rgba(34,197,94,0.3);border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:800;margin-left:6px;">+ NEW</span>'
+    elif "INCREASED" in alert:
+        alert_html = '<span style="background:rgba(249,115,22,0.1);color:#F97316;border:1px solid rgba(249,115,22,0.3);border-radius:999px;padding:2px 8px;font-size:0.7rem;font-weight:800;margin-left:6px;">↑ RISK UP</span>'
     st.markdown(f"""
     <div class="company-card">
-      <div style="display:flex;justify-content:space-between;align-items:start;gap:1rem;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
         <div style="flex:1;min-width:0;">
-          <h4>{row.get('Brand','')}</h4>
+          <h4>{row.get('Brand','')} {alert_html}</h4>
           <div class="meta">{svc} · {reg}</div>
-          <div style="font-size:0.88rem;color:#374151;margin-top:0.4rem;">{rat}</div>
+          <div class="rationale">{rat}</div>
+          {f'<div class="action-note">{act}</div>' if act else ''}
         </div>
-        <div style="text-align:right;min-width:130px;flex-shrink:0;">
+        <div style="text-align:right;min-width:120px;flex-shrink:0;">
           {pill_html}
-          <div style="font-size:0.78rem;color:#6B7280;margin-top:0.4rem;">{act}</div>
-          <div style="margin-top:0.3rem;">{link}</div>
+          <div style="margin-top:6px;">{link}</div>
         </div>
       </div>
     </div>""", unsafe_allow_html=True)
@@ -315,82 +418,76 @@ def list_screening_files() -> list[dict]:
                           "timestamp": ts, "size_kb": p.stat().st_size // 1024})
     return sorted(files, key=lambda x: x["timestamp"], reverse=True)
 
-@st.cache_data(show_spinner="Loading data...")
+@st.cache_data(show_spinner="Loading screening data…")
 def load_data(path: str) -> pd.DataFrame:
-    try:
-        df = pd.read_excel(path, sheet_name="📋 All Results")
+    try:    df = pd.read_excel(path, sheet_name="📋 All Results")
     except Exception:
         try:    df = pd.read_excel(path, sheet_name=0)
         except Exception as e:
             st.error(f"Could not read file: {e}"); return pd.DataFrame()
-
-    for col in ["Brand","Classification","Group","Service Type",
-                "Regulator Scope","Alert Status"]:
-        if col in df.columns:
-            df[col] = df[col].astype(str)
+    for col in ["Brand","Classification","Group","Service Type","Regulator Scope","Alert Status"]:
+        if col in df.columns: df[col] = df[col].astype(str)
     if "Risk Level" in df.columns:
         df["Risk Level"] = pd.to_numeric(df["Risk Level"], errors="coerce").fillna(2).astype(int)
-
-    # ── Apply noise filter ──
     if "Brand" in df.columns:
         df = df[~df["Brand"].apply(is_noise_brand)].reset_index(drop=True)
     return df
 
-def fuzzy_filter(df: pd.DataFrame, query: str) -> pd.DataFrame:
-    """Kept for potential future use; currently unused."""
-    if not query: return df
-    q = query.lower().strip()
-    mask = df["Brand"].astype(str).str.lower().str.contains(q, na=False, regex=False)
-    if "Service Type" in df.columns:
-        mask |= df["Service Type"].astype(str).str.lower().str.contains(q, na=False, regex=False)
-    result = df[mask]
-    if result.empty and len(q) >= 3:
-        scores = df["Brand"].astype(str).apply(
-            lambda b: SequenceMatcher(None, q, b.lower()).ratio())
-        result = df[scores >= 0.45]
-    return result
-
 # ── SIDEBAR ───────────────────────────────────────────────────────────────
-st.sidebar.markdown("### 🛡️ UAE Screening")
-st.sidebar.caption("Market Conduct search tool")
-st.sidebar.markdown("---")
+with st.sidebar:
+    st.markdown("""
+    <div style="display:flex;align-items:center;gap:10px;padding:4px 0 12px 0;border-bottom:1px solid rgba(201,168,76,0.15);margin-bottom:12px;">
+        <div style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#C9A84C,#7A5B10);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;box-shadow:0 4px 12px rgba(201,168,76,0.3);">🛡️</div>
+        <div>
+            <div style="color:#D8E1F2;font-size:13px;font-weight:800;line-height:1.2;">UAE Screening</div>
+            <div style="color:#4E5E7A;font-size:9px;font-weight:600;letter-spacing:0.07em;">RISK MONITORING PLATFORM</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-files = list_screening_files()
+    files = list_screening_files()
 
-st.sidebar.subheader("📂 Data Source")
-selected_path = None
-if files:
-    options = {
-        f"🗓️ {f['timestamp'].strftime('%d %b %Y, %H:%M')}  ·  {f['size_kb']} KB": f["path"]
-        for f in files
-    }
-    choice = st.sidebar.selectbox("Run:", list(options.keys()), index=0,
-                                   label_visibility="collapsed")
-    selected_path = options[choice]
+    st.markdown('<div style="color:#7E8FAD;font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">Screening Run</div>', unsafe_allow_html=True)
+    selected_path = None
+    if files:
+        options = {
+            f'{f["timestamp"].strftime("%d %b %Y, %H:%M")}  ·  {f["size_kb"]} KB': f["path"]
+            for f in files
+        }
+        choice = st.selectbox("Run", list(options.keys()), index=0, label_visibility="collapsed")
+        selected_path = options[choice]
+    else:
+        st.info("No screening files found. Upload one below.")
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("📤 Upload new run")
-uploaded = st.sidebar.file_uploader("Drop a UAE_Screening_*.xlsx file",
-                                     type=["xlsx"], label_visibility="collapsed")
-if uploaded:
-    save_path = DATA_DIR / uploaded.name
-    with open(save_path, "wb") as f: f.write(uploaded.getbuffer())
-    st.sidebar.success(f"✅ Saved: {uploaded.name}")
-    st.cache_data.clear(); st.rerun()
+    st.markdown("---")
+    st.markdown('<div style="color:#7E8FAD;font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">Upload New Run</div>', unsafe_allow_html=True)
+    uploaded = st.file_uploader("Drop a UAE_Screening_*.xlsx file", type=["xlsx"], label_visibility="collapsed")
+    if uploaded:
+        save_path = DATA_DIR / uploaded.name
+        with open(save_path, "wb") as f: f.write(uploaded.getbuffer())
+        st.success(f"Saved: {uploaded.name}")
+        st.cache_data.clear(); st.rerun()
 
-st.sidebar.markdown("---")
-st.sidebar.caption(f"📊 Total runs archived: **{len(files)}**")
-st.sidebar.caption(f"📁 `{DATA_DIR}`")
+    st.markdown("---")
+    st.caption(f"Runs archived: **{len(files)}**")
+    st.caption(f"`{DATA_DIR}`")
+    st.markdown("")
+    st.caption("Internal tool — not a legal determination.")
 
 # ── HEADER ────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="main-header">
-    <h1>🛡️ UAE Regulatory Screening</h1>
-    <p>Market Conduct · Search, monitor, and flag UAE-facing financial services companies</p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+            <h1>🛡️ UAE Regulatory Screening</h1>
+            <p>Risk monitoring, search, and insight discovery across UAE financial entities</p>
+        </div>
+        <span class="badge">LIVE RUN</span>
+    </div>
 </div>""", unsafe_allow_html=True)
 
 if selected_path is None:
-    st.warning("⚠️ No screening files found yet. Run `uae_screening_v5.py` or upload a file.")
+    st.warning("No screening files found. Run the screening script or upload a file via the sidebar.")
     st.stop()
 
 df = load_data(selected_path)
@@ -398,268 +495,244 @@ if df.empty:
     st.error("The selected file is empty or could not be read."); st.stop()
 
 # ── KPIs ──────────────────────────────────────────────────────────────────
-total       = len(df)
-unlicensed  = len(df[df["Risk Level"] >= 4])
-needs_rev   = len(df[(df["Risk Level"] >= 2) & (df["Risk Level"] <= 3)])
-licensed    = len(df[df["Risk Level"] == 0])
-new_run     = len(df[df["Alert Status"] == "🆕 NEW"]) if "Alert Status" in df.columns else 0
-risk_up     = len(df[df["Alert Status"] == "📈 RISK INCREASED"]) if "Alert Status" in df.columns else 0
+total      = len(df)
+high_risk  = len(df[df["Risk Level"] >= 4])
+needs_rev  = len(df[(df["Risk Level"] >= 2) & (df["Risk Level"] <= 3)])
+licensed   = len(df[df["Risk Level"] == 0])
+new_ents   = len(df[df["Alert Status"] == "🆕 NEW"])   if "Alert Status" in df.columns else 0
+risk_up    = len(df[df["Alert Status"] == "📈 RISK INCREASED"]) if "Alert Status" in df.columns else 0
 
-k1,k2,k3,k4,k5 = st.columns(5)
-k1.metric("📊 Total Screened",   f"{total:,}")
-k2.metric("🔴 High Risk",        unlicensed,
-          delta=f"{unlicensed/total*100:.0f}% of total" if total else None,
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Entities Screened", f"{total:,}")
+k2.metric("High / Critical",   high_risk,
+          delta=f"{high_risk/total*100:.0f}% of total" if total else None,
           delta_color="inverse")
-k3.metric("🟠 Needs Review",     needs_rev)
-k4.metric("🟢 Licensed",         licensed)
-k5.metric("🆕 New",              new_run,
-          delta=f"📈 {risk_up} risk ↑" if risk_up else None,
+k3.metric("Needs Review",      needs_rev)
+k4.metric("Licensed / Clear",  licensed)
+k5.metric("New Entities",      new_ents,
+          delta=f"↑ {risk_up} risk increased" if risk_up else None,
           delta_color="inverse")
 
 st.markdown("---")
 
-# ── TABS (3 only) ─────────────────────────────────────────────────────────
-tab_home, tab_search, tab_insights = st.tabs(["🏠 Home", "🔍 Search", "📊 Insights"])
+# ── TABS ──────────────────────────────────────────────────────────────────
+tab_home, tab_search, tab_insights = st.tabs(["🏠 Overview", "🔍 Search & Filter", "📊 Insights"])
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 1 – HOME
+# TAB 1 – OVERVIEW
 # ════════════════════════════════════════════════════════════════════════════
 with tab_home:
-    st.subheader("⚠️ Top entities needing attention")
-    st.caption("Ranked by risk level — focus here first")
+    left_col, right_col = st.columns([1.7, 1])
 
-    top_risk = df[df["Risk Level"] >= 4].sort_values("Risk Level", ascending=False).head(10)
+    with left_col:
+        st.markdown('<div class="section-title">Priority Review Queue</div>', unsafe_allow_html=True)
+        st.caption("Top entities by risk level — focus here first")
+        top_risk = df[df["Risk Level"] >= 4].sort_values("Risk Level", ascending=False).head(10)
+        if top_risk.empty:
+            st.success("✅ No high-risk entities to review this run.")
+        else:
+            for _, row in top_risk.iterrows():
+                render_card(row)
 
-    if top_risk.empty:
-        st.success("✅ No high-risk entities to review this run.")
-    else:
-        for _, row in top_risk.iterrows():
-            render_card(row)
+    with right_col:
+        # Alert banner
+        if new_ents > 0 or risk_up > 0:
+            st.markdown(f"""
+            <div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.22);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+                <div style="color:#F97316;font-size:10px;font-weight:800;letter-spacing:0.08em;margin-bottom:6px;">ALERTS THIS RUN</div>
+                {"<div style='color:#8896B4;font-size:12px;margin-bottom:3px;'><span style='color:#22C55E;font-weight:700;'>"+str(new_ents)+" new</span> entities added</div>" if new_ents else ""}
+                {"<div style='color:#8896B4;font-size:12px;'><span style='color:#F97316;font-weight:700;'>"+str(risk_up)+"</span> risk level increases</div>" if risk_up else ""}
+            </div>""", unsafe_allow_html=True)
+
+        # Summary
+        st.markdown('<div class="section-title">Run Summary</div>', unsafe_allow_html=True)
+        dominant_reg = "N/A"
+        dominant_svc = "N/A"
+        if "Regulator Scope" in df.columns and not df["Regulator Scope"].dropna().empty:
+            dominant_reg = df["Regulator Scope"].astype(str).value_counts().idxmax()
+        if "Service Type" in df.columns and not df["Service Type"].dropna().empty:
+            dominant_svc = df["Service Type"].astype(str).value_counts().idxmax()
+
+        for label, value in [
+            ("Selected file",  Path(selected_path).name),
+            ("Top regulator",  dominant_reg),
+            ("Top service",    dominant_svc),
+            ("Total rows",     f"{total:,}"),
+        ]:
+            st.markdown(f"""
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:8px;">
+                <span style="color:#4E5E7A;font-size:11px;">{label}</span>
+                <span style="color:#D8E1F2;font-size:11px;font-weight:700;text-align:right;word-break:break-word;max-width:160px;">{value}</span>
+            </div>""", unsafe_allow_html=True)
+
+        st.markdown("")
+        if "Risk Level" in df.columns:
+            st.markdown('<div class="section-title" style="margin-top:14px;">Risk Distribution</div>', unsafe_allow_html=True)
+            rc = df["Risk Level"].value_counts().sort_index(ascending=False)
+            rc.index = [RISK_META.get(int(i),{}).get("label",str(i)) for i in rc.index]
+            st.bar_chart(rc, height=200, use_container_width=True)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 2 – SEARCH
+# TAB 2 – SEARCH & FILTER
 # ════════════════════════════════════════════════════════════════════════════
 with tab_search:
-    st.subheader("🔍 Search & Filter")
+    if "active_chip" not in st.session_state: st.session_state.active_chip = None
+    if "page"        not in st.session_state: st.session_state.page = 1
 
-    # ── session state ────────────────────────────────────────────────────
-    if "active_chip" not in st.session_state:
-        st.session_state.active_chip = None
-    if "page" not in st.session_state:
-        st.session_state.page = 1
-
-    # ── Google-style autocomplete search box ─────────────────────────────
     all_brands = sorted(df["Brand"].dropna().unique().tolist())
 
     def search_brands(searchterm: str) -> list[str]:
-        """Called as user types — returns matching brand names."""
-        if not searchterm:
-            return []
+        if not searchterm: return []
         q = searchterm.lower().strip()
-        # Starts-with matches first (better UX)
-        starts = [b for b in all_brands if b.lower().startswith(q)]
-        # Then contains matches
+        starts   = [b for b in all_brands if b.lower().startswith(q)]
         contains = [b for b in all_brands if q in b.lower() and b not in starts]
         return (starts + contains)[:15]
 
-    if HAS_SEARCHBOX:
-        selected_brand = st_searchbox(
-            search_brands,
-            placeholder="🔍 Start typing a company name (e.g. Cash, Tabby, Binance...)",
-            key="brand_searchbox",
-            clear_on_submit=False,
-        )
-    else:
-        # Fallback if component isn't installed
-        st.warning("⚠️ For a better search experience, add `streamlit-searchbox` to requirements.txt")
-        selected_brand_raw = st.selectbox(
-            "🔍 Search for a company",
-            options=["— All companies —"] + all_brands,
-            index=0,
-        )
-        selected_brand = None if selected_brand_raw == "— All companies —" else selected_brand_raw
+    sc1, sc2 = st.columns([1.2, 1])
+    with sc1:
+        st.markdown('<div class="section-title">Entity Search</div>', unsafe_allow_html=True)
+        if HAS_SEARCHBOX:
+            selected_brand = st_searchbox(search_brands,
+                placeholder="Search company or brand…",
+                key="brand_searchbox", clear_on_submit=False)
+        else:
+            st.warning("Add `streamlit-searchbox` for autocomplete.")
+            raw = st.selectbox("Brand", ["— All —"] + all_brands, index=0)
+            selected_brand = None if raw == "— All —" else raw
+    with sc2:
+        st.markdown('<div class="section-title">Filters</div>', unsafe_allow_html=True)
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            risk_opts   = sorted(df["Risk Level"].dropna().unique().tolist(), reverse=True)
+            risk_filter = st.multiselect("Risk Level", options=risk_opts,
+                format_func=lambda x: RISK_META.get(int(x),{}).get("label",str(x)))
+        with fc2:
+            reg_opts   = sorted(df["Regulator Scope"].dropna().unique().tolist()) \
+                if "Regulator Scope" in df.columns else []
+            reg_filter = st.multiselect("Regulator", options=reg_opts)
 
-    # Reset to page 1 when selection changes
-    if selected_brand != st.session_state.get("_last_selected_brand"):
+    if selected_brand != st.session_state.get("_last_brand"):
         st.session_state.page = 1
-        st.session_state._last_selected_brand = selected_brand
+        st.session_state._last_brand = selected_brand
 
-    # ── Filter row: Risk Level + Regulator ───────────────────────────────
-    fc1, fc2 = st.columns(2)
-    with fc1:
-        risk_opts = sorted(df["Risk Level"].dropna().unique().tolist(), reverse=True)
-        risk_filter = st.multiselect(
-            "Risk Level", options=risk_opts,
-            format_func=lambda x: RISK_META.get(int(x), {}).get("label", str(x)),
-        )
-    with fc2:
-        reg_opts = sorted(df["Regulator Scope"].dropna().unique().tolist()) \
-            if "Regulator Scope" in df.columns else []
-        reg_filter = st.multiselect("Regulator", options=reg_opts)
-
-    # ── Quick-filter chip buttons (uniform width, single row) ────────────
-    st.markdown(
-        "<div style='margin:0.5rem 0 0.3rem 0; font-size:0.82rem; color:#6B7280;'>"
-        "Quick filters:</div>",
-        unsafe_allow_html=True,
-    )
-    chips = [
-        ("🔴 High Risk", "high_risk"),
-        ("🆕 New",       "new"),
-        ("📈 Risk Up",   "risk_up"),
-        ("🟢 Licensed",  "licensed"),
-        ("₿ Crypto",     "va"),
-        ("🗑️ Clear",     "clear"),
-    ]
+    # Quick-filter chips
+    st.markdown('<div style="color:#7E8FAD;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;margin:10px 0 6px;">Quick Filters</div>', unsafe_allow_html=True)
+    chips = [("High / Critical","high"),("New","new"),("Risk Up","riskup"),("Licensed","licensed"),("Crypto","va"),("Clear","clear")]
     chip_cols = st.columns(len(chips))
     for i, (label, key) in enumerate(chips):
-        is_active = (st.session_state.active_chip == key)
+        is_active = st.session_state.active_chip == key
         btn_label = f"✓ {label}" if is_active else label
         if chip_cols[i].button(btn_label, key=f"chip_{key}", use_container_width=True):
-            if key == "clear":
-                st.session_state.active_chip = None
-            else:
-                st.session_state.active_chip = None if is_active else key
+            st.session_state.active_chip = None if key == "clear" or is_active else key
             st.session_state.page = 1
             st.rerun()
 
-    # ── Apply all filters ────────────────────────────────────────────────
+    # Apply filters
     filtered = df.copy()
-
-    # Brand filter (from autocomplete searchbox)
     if selected_brand:
         filtered = filtered[filtered["Brand"] == selected_brand]
-
-    # Dropdown filters
     if risk_filter:
         filtered = filtered[filtered["Risk Level"].isin(risk_filter)]
     if reg_filter:
         filtered = filtered[filtered["Regulator Scope"].isin(reg_filter)]
-
-    # Chip filter
     chip = st.session_state.active_chip
-    if chip == "high_risk":
-        filtered = filtered[filtered["Risk Level"] >= 4]
-    elif chip == "new" and "Alert Status" in filtered.columns:
+    if chip == "high":     filtered = filtered[filtered["Risk Level"] >= 4]
+    elif chip == "new"     and "Alert Status" in filtered.columns:
         filtered = filtered[filtered["Alert Status"] == "🆕 NEW"]
-    elif chip == "risk_up" and "Alert Status" in filtered.columns:
+    elif chip == "riskup"  and "Alert Status" in filtered.columns:
         filtered = filtered[filtered["Alert Status"] == "📈 RISK INCREASED"]
-    elif chip == "licensed":
-        filtered = filtered[filtered["Risk Level"] == 0]
+    elif chip == "licensed": filtered = filtered[filtered["Risk Level"] == 0]
     elif chip == "va":
-        va_mask = filtered["Regulator Scope"].astype(str).str.contains(
-            "VA|VASP|CRYPTO", case=False, na=False)
+        va_mask = filtered["Regulator Scope"].astype(str).str.contains("VA|VASP|CRYPTO",case=False,na=False)
         if "Service Type" in filtered.columns:
-            va_mask |= filtered["Service Type"].astype(str).str.contains(
-                "crypto|virtual asset|token", case=False, na=False)
+            va_mask |= filtered["Service Type"].astype(str).str.contains("crypto|virtual asset|token",case=False,na=False)
         filtered = filtered[va_mask]
-
-    # Sort by risk descending
     filtered = filtered.sort_values("Risk Level", ascending=False)
 
-    # ── Pagination ────────────────────────────────────────────────────────
+    # Pagination
     per_page    = 25
     total_pages = max(1, (len(filtered) + per_page - 1) // per_page)
-    if st.session_state.page > total_pages:
-        st.session_state.page = 1
+    if st.session_state.page > total_pages: st.session_state.page = 1
 
-    rc1, rc2 = st.columns([3, 1])
-    rc1.caption(f"Showing **{len(filtered):,}** of **{total:,}** entities")
-    rc2.caption(f"Page **{st.session_state.page}** of **{total_pages}**")
+    rc_left, rc_right = st.columns([3,1])
+    rc_left.caption(f"**{len(filtered):,}** of **{total:,}** entities")
+    rc_right.caption(f"Page **{st.session_state.page}** / **{total_pages}**")
 
-    display_cols = [c for c in [
-        "Brand", "Classification", "Risk Level", "Action Required",
-        "Confidence", "Regulator Scope", "Service Type",
-        "Matched Entity (Register)", "Rationale", "Top Source URL",
-    ] if c in filtered.columns]
+    display_cols = [c for c in ["Brand","Classification","Risk Level","Action Required",
+        "Confidence","Regulator Scope","Service Type","Matched Entity (Register)",
+        "Rationale","Top Source URL"] if c in filtered.columns]
 
-    start    = (st.session_state.page - 1) * per_page
-    page_df  = filtered.iloc[start: start + per_page]
+    start   = (st.session_state.page - 1) * per_page
+    page_df = filtered.iloc[start: start + per_page]
 
-    st.dataframe(
-        page_df[display_cols],
-        use_container_width=True,
-        height=min(550, 60 + len(page_df) * 38),
-        hide_index=True,
+    st.dataframe(page_df[display_cols], use_container_width=True,
+        height=min(540, 60 + len(page_df) * 38), hide_index=True,
         column_config={
-            "Top Source URL": st.column_config.LinkColumn("🔗 Source", width="small"),
-            "Risk Level":     st.column_config.NumberColumn("Risk", format="%d",
-                                                            min_value=0, max_value=5,
-                                                            width="small"),
+            "Top Source URL": st.column_config.LinkColumn("↗ Source", width="small"),
+            "Risk Level":     st.column_config.NumberColumn("Risk", format="%d", min_value=0, max_value=5, width="small"),
             "Brand":          st.column_config.TextColumn("Brand", width="medium"),
             "Rationale":      st.column_config.TextColumn("Rationale", width="large"),
-        },
-    )
+        })
 
-    # Pagination buttons
-    pc1, pc2, pc3, pc4, pc5 = st.columns([1,1,4,1,1])
-    if pc1.button("⏮️", use_container_width=True,
-                  disabled=st.session_state.page<=1, key="p_first"):
+    pc1,pc2,pc3,pc4,pc5 = st.columns([1,1,4,1,1])
+    if pc1.button("⏮", use_container_width=True, disabled=st.session_state.page<=1, key="p_first"):
         st.session_state.page=1; st.rerun()
-    if pc2.button("◀️", use_container_width=True,
-                  disabled=st.session_state.page<=1, key="p_prev"):
+    if pc2.button("◀", use_container_width=True, disabled=st.session_state.page<=1, key="p_prev"):
         st.session_state.page-=1; st.rerun()
-    pc3.markdown(f"<div style='text-align:center;padding-top:0.5rem;'>"
-                 f"Page <b>{st.session_state.page}</b> of {total_pages}</div>",
-                 unsafe_allow_html=True)
-    if pc4.button("▶️", use_container_width=True,
-                  disabled=st.session_state.page>=total_pages, key="p_next"):
+    pc3.markdown(f"<div style='text-align:center;padding-top:0.5rem;color:#7E8FAD;font-size:12px;'>Page <b style='color:#D8E1F2'>{st.session_state.page}</b> of {total_pages}</div>", unsafe_allow_html=True)
+    if pc4.button("▶", use_container_width=True, disabled=st.session_state.page>=total_pages, key="p_next"):
         st.session_state.page+=1; st.rerun()
-    if pc5.button("⏭️", use_container_width=True,
-                  disabled=st.session_state.page>=total_pages, key="p_last"):
+    if pc5.button("⏭", use_container_width=True, disabled=st.session_state.page>=total_pages, key="p_last"):
         st.session_state.page=total_pages; st.rerun()
 
-    # ── Downloads ─────────────────────────────────────────────────────────
     if not filtered.empty:
         d1, d2 = st.columns(2)
         csv = filtered.to_csv(index=False).encode("utf-8-sig")
-        d1.download_button("⬇️ Download CSV", data=csv,
-                           file_name=f"filtered_{datetime.now():%Y%m%d_%H%M}.csv",
-                           mime="text/csv", use_container_width=True)
+        d1.download_button("↓ Download CSV", data=csv,
+            file_name=f"filtered_{datetime.now():%Y%m%d_%H%M}.csv",
+            mime="text/csv", use_container_width=True)
         try:
             buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                filtered.to_excel(writer, index=False, sheet_name="Filtered")
-            d2.download_button("⬇️ Download Excel", data=buf.getvalue(),
-                               file_name=f"filtered_{datetime.now():%Y%m%d_%H%M}.xlsx",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               use_container_width=True)
-        except Exception:
-            pass
+            with pd.ExcelWriter(buf, engine="openpyxl") as w: filtered.to_excel(w, index=False, sheet_name="Filtered")
+            d2.download_button("↓ Download Excel", data=buf.getvalue(),
+                file_name=f"filtered_{datetime.now():%Y%m%d_%H%M}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True)
+        except Exception: pass
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 3 – INSIGHTS
 # ════════════════════════════════════════════════════════════════════════════
 with tab_insights:
-    st.subheader("📊 Insights Dashboard")
+    st.markdown('<div class="section-title">Insights Dashboard</div>', unsafe_allow_html=True)
 
     ic1, ic2 = st.columns(2)
     with ic1:
         st.markdown("#### Risk Level Distribution")
         if "Risk Level" in df.columns:
             rc = df["Risk Level"].value_counts().sort_index(ascending=False)
-            rc.index = [RISK_META.get(int(i),{}).get("label", str(i)) for i in rc.index]
-            st.bar_chart(rc, height=260)
+            rc.index = [RISK_META.get(int(i),{}).get("label",str(i)) for i in rc.index]
+            st.bar_chart(rc, height=240)
     with ic2:
-        st.markdown("#### Classification Groups")
-        if "Group" in df.columns:
-            st.bar_chart(df["Group"].value_counts(), height=260)
+        st.markdown("#### Top Regulator Scopes")
+        if "Regulator Scope" in df.columns:
+            st.bar_chart(df["Regulator Scope"].value_counts().head(10), height=240)
 
     ic3, ic4 = st.columns(2)
     with ic3:
-        st.markdown("#### Top 10 Regulator Scopes")
-        if "Regulator Scope" in df.columns:
-            st.bar_chart(df["Regulator Scope"].value_counts().head(10), height=260)
-    with ic4:
-        st.markdown("#### Top 10 Service Types")
+        st.markdown("#### Service Type Mix")
         if "Service Type" in df.columns:
-            st.bar_chart(df["Service Type"].value_counts().head(10), height=260)
+            st.bar_chart(df["Service Type"].value_counts().head(10), height=240)
+    with ic4:
+        st.markdown("#### Alert Status Mix")
+        if "Alert Status" in df.columns:
+            st.bar_chart(df["Alert Status"].value_counts().head(10), height=240)
 
     st.markdown("---")
-    st.markdown("#### 📈 Trend Across Runs")
+    st.markdown("#### Trend Across Runs")
     if len(files) >= 2:
         trend_rows = []
         for f in files[:10]:
@@ -667,16 +740,16 @@ with tab_insights:
                 d = pd.read_excel(f["path"], sheet_name="📋 All Results")
                 d["Risk Level"] = pd.to_numeric(d["Risk Level"], errors="coerce").fillna(2).astype(int)
                 trend_rows.append({
-                    "Run":               f["timestamp"].strftime("%m/%d %H:%M"),
-                    "Unlicensed (4+)":   int(len(d[d["Risk Level"] >= 4])),
-                    "Needs Review (2-3)":int(len(d[(d["Risk Level"]>=2)&(d["Risk Level"]<=3)])),
-                    "Licensed (0)":      int(len(d[d["Risk Level"]==0])),
+                    "Run":                f["timestamp"].strftime("%m/%d %H:%M"),
+                    "High / Critical":    int(len(d[d["Risk Level"] >= 4])),
+                    "Needs Review":       int(len(d[(d["Risk Level"]>=2)&(d["Risk Level"]<=3)])),
+                    "Licensed":           int(len(d[d["Risk Level"]==0])),
                 })
             except Exception: continue
         if trend_rows:
-            st.line_chart(pd.DataFrame(trend_rows).set_index("Run").iloc[::-1], height=280)
+            st.line_chart(pd.DataFrame(trend_rows).set_index("Run").iloc[::-1], height=260)
     else:
-        st.caption(f"Only {len(files)} run archived — trend chart needs 2+ runs.")
+        st.caption(f"Only {len(files)} run archived — trend chart requires 2+ runs.")
 
     st.markdown("---")
     st.markdown("#### Full Classification Breakdown")
@@ -688,8 +761,9 @@ with tab_insights:
 
 # ── FOOTER ────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.caption(
-    f"📁 `{Path(selected_path).name}`  ·  "
-    f"🕐 {datetime.now():%Y-%m-%d %H:%M}  ·  "
-    f"ℹ️ Automated first-pass screening — not a legal determination"
-)
+st.markdown(f"""
+<div style="color:#4E5E7A;font-size:11px;display:flex;gap:16px;flex-wrap:wrap;">
+    <span>📁 {Path(selected_path).name}</span>
+    <span>🕐 {datetime.now():%Y-%m-%d %H:%M}</span>
+    <span>ℹ️ Automated first-pass screening — not a legal determination</span>
+</div>""", unsafe_allow_html=True)
