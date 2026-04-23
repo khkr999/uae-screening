@@ -134,6 +134,15 @@ html, body, [class*="css"], .stApp {{
 [data-testid="stSidebar"] * {{ color: {c['text_dim']} !important; }}
 [data-testid="stSidebar"] h3 {{ color: {c['gold']} !important; }}
 [data-testid="stSidebar"] .stCaption {{ color: {c['text_muted']} !important; font-size: 0.78rem !important; }}
+[data-testid="collapsedControl"] {{
+    background: {c['card_bg']} !important;
+    border: 1px solid {c['gold_border']} !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+}}
+[data-testid="collapsedControl"] svg {{
+    fill: {c['gold']} !important;
+}}
 
 /* Inputs */
 div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
@@ -655,6 +664,22 @@ if selected_path is None:
       <div style="color:#E11D48;font-size:13px;font-weight:700;margin-bottom:4px;">⚠ No screening file loaded</div>
       <div style="color:#8896B4;font-size:11px;">Run the screening script or upload a file using the sidebar.</div>
     </div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="margin:14px 0 8px 0;color:{c['text']};font-size:12px;font-weight:700;">
+      Upload a screening file here if the sidebar is collapsed
+    </div>""", unsafe_allow_html=True)
+    uploaded_main = st.file_uploader(
+        "Upload a UAE_Screening_*.xlsx file",
+        type=["xlsx"],
+        key="main_file_uploader"
+    )
+    if uploaded_main:
+        save_path = DATA_DIR / uploaded_main.name
+        with open(save_path, "wb") as f:
+            f.write(uploaded_main.getbuffer())
+        st.success(f"Saved: {uploaded_main.name}")
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
 # ── LOAD DATA ─────────────────────────────────────────────────────────────
