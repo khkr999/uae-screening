@@ -246,6 +246,15 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
 }}
 .live-dot {{ width:5px; height:5px; border-radius:50%; background:#10B981; display:inline-block; }}
 .live-txt {{ color:#10B981; font-size:10px; font-weight:800; letter-spacing:0.06em; }}
+.theme-status {{
+    color:{c['text_muted']};
+    font-size:10px;
+    text-align:right;
+    margin-top:6px;
+    font-weight:700;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+}}
 
 @media (max-width: 900px) {{
     .topbar {{
@@ -637,26 +646,39 @@ with st.sidebar:
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 file_label = Path(selected_path).name if selected_path else "No file loaded"
 
-st.markdown(f"""
-<div class="topbar">
-  <div class="topbar-logo">
-    <div class="topbar-icon">🛡️</div>
-    <div>
-      <div class="topbar-title">UAE Regulatory Screening</div>
-      <div class="topbar-sub">INTERNAL RISK MONITORING PLATFORM</div>
-    </div>
-  </div>
-  <div class="topbar-status">
-    <div class="topbar-meta">
-      <div class="run">Run: <b>{now_str}</b></div>
-      <div class="src">VARA · CBUAE · DFSA · ADGM · SCA</div>
-    </div>
-    <div class="live-badge">
-      <span class="live-dot"></span>
-      <span class="live-txt">LIVE</span>
-    </div>
-  </div>
-</div>""", unsafe_allow_html=True)
+theme_toggle_label = "☀ Light Mode" if dark else "☾ Dark Mode"
+header_col, toggle_col = st.columns([6.2, 1.35])
+
+with header_col:
+    st.markdown(f"""
+    <div class="topbar">
+      <div class="topbar-logo">
+        <div class="topbar-icon">🛡️</div>
+        <div>
+          <div class="topbar-title">UAE Regulatory Screening</div>
+          <div class="topbar-sub">INTERNAL RISK MONITORING PLATFORM</div>
+        </div>
+      </div>
+      <div class="topbar-status">
+        <div class="topbar-meta">
+          <div class="run">Run: <b>{now_str}</b></div>
+          <div class="src">VARA · CBUAE · DFSA · ADGM · SCA</div>
+        </div>
+        <div class="live-badge">
+          <span class="live-dot"></span>
+          <span class="live-txt">LIVE</span>
+        </div>
+      </div>
+    </div>""", unsafe_allow_html=True)
+
+with toggle_col:
+    if st.button(theme_toggle_label, key="header_theme_toggle", use_container_width=True):
+        st.session_state.theme = "light" if dark else "dark"
+        st.rerun()
+    st.markdown(
+        f'<div class="theme-status">Theme: {"Dark" if dark else "Light"}</div>',
+        unsafe_allow_html=True,
+    )
 
 if selected_path is None:
     st.markdown("""
