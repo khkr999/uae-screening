@@ -209,30 +209,48 @@ div[data-testid="stHorizontalBlock"] .stButton button {{
 
 /* Compact top bar */
 .topbar {{
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 0 14px 0; margin-bottom: 4px;
-    border-bottom: 1px solid {c['border']};
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:14px 18px; margin:0 0 14px 0;
+    background:linear-gradient(180deg,{c['card_bg']} 0%, {c['raised_bg']} 100%);
+    border:1px solid {c['gold_border']};
+    border-radius:16px;
+    box-shadow:0 10px 28px rgba(0,0,0,0.22);
 }}
 .topbar-logo {{ display:flex; align-items:center; gap:10px; }}
 .topbar-icon {{
-    width:32px; height:32px; border-radius:9px;
+    width:40px; height:40px; border-radius:11px;
     background:linear-gradient(135deg,{c['gold']},#7A5B10);
     display:flex; align-items:center; justify-content:center;
-    font-size:16px; box-shadow:0 4px 12px rgba(201,168,76,0.25);
+    font-size:18px; box-shadow:0 6px 18px rgba(201,168,76,0.25);
     flex-shrink:0;
 }}
-.topbar-title {{ color:{c['text']}; font-size:14px; font-weight:800; line-height:1.2; }}
-.topbar-sub {{ color:{c['text_muted']}; font-size:9px; font-weight:600; letter-spacing:0.08em; }}
+.topbar-title {{ color:{c['text']}; font-size:18px; font-weight:800; line-height:1.15; }}
+.topbar-sub {{ color:{c['text_muted']}; font-size:10px; font-weight:700; letter-spacing:0.12em; margin-top:2px; }}
+.topbar-status {{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }}
 .topbar-meta {{ text-align:right; }}
-.topbar-meta .run {{ color:{c['text_dim']}; font-size:10px; }}
+.topbar-meta .run {{ color:{c['text_dim']}; font-size:11px; }}
 .topbar-meta .run b {{ color:{c['text']}; }}
-.topbar-meta .src {{ color:{c['text_muted']}; font-size:9px; }}
+.topbar-meta .src {{ color:{c['text_muted']}; font-size:10px; }}
 .live-badge {{
-    display:inline-flex; align-items:center; gap:5px; padding:4px 10px;
+    display:inline-flex; align-items:center; gap:5px; padding:5px 11px;
     border-radius:999px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.25);
 }}
 .live-dot {{ width:5px; height:5px; border-radius:50%; background:#10B981; display:inline-block; }}
 .live-txt {{ color:#10B981; font-size:10px; font-weight:800; letter-spacing:0.06em; }}
+
+@media (max-width: 900px) {{
+    .topbar {{
+        flex-direction:column;
+        align-items:flex-start;
+    }}
+    .topbar-status {{
+        width:100%;
+        justify-content:space-between;
+    }}
+    .topbar-meta {{
+        text-align:left;
+    }}
+}}
 
 /* Pill */
 .pill {{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:10px; font-weight:800; white-space:nowrap; letter-spacing:0.04em; }}
