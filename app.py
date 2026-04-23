@@ -17,6 +17,7 @@ st.set_page_config(
     page_title="UAE Regulatory Screening",
     page_icon="🛡️",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 DATA_DIR = Path("data")
@@ -25,7 +26,6 @@ DATA_DIR.mkdir(exist_ok=True)
 # ── SIDEBAR ────────────────────────────────────────────
 password = st.sidebar.text_input("Admin Access", type="password")
 IS_ADMIN = password == "admin123"
-
 dark_mode = st.sidebar.toggle("🌙 Dark Mode")
 
 # ── CSS ────────────────────────────────────────────────
@@ -42,7 +42,7 @@ footer {visibility:hidden;}
     margin-bottom:1rem;
 }
 
-/* 🔥 PROPER CARD DESIGN */
+/* 🔥 CARDS */
 .card {
     background:white;
     border-radius:14px;
@@ -79,6 +79,14 @@ footer {visibility:hidden;}
 </style>
 """, unsafe_allow_html=True)
 
+if dark_mode:
+    st.markdown("""
+    <style>
+    body { background:#0E1117; color:#E5E7EB; }
+    .card { background:#1A1D24; border:1px solid #2A2E36; }
+    </style>
+    """, unsafe_allow_html=True)
+
 # ── HELPERS ────────────────────────────────────────────
 def list_files():
     files = []
@@ -96,6 +104,9 @@ def load_data(path):
     except:
         return pd.read_excel(path)
 
+def safe(df, col):
+    return col in df.columns
+
 def render_card(row):
     risk = int(row.get("Risk Level", 2))
     color = {5:"#991B1B",4:"#DC2626",3:"#F59E0B",2:"#2563EB",0:"#059669"}.get(risk)
@@ -109,7 +120,7 @@ def render_card(row):
                     {row.get("Service Type","")} · {row.get("Regulator Scope","")}
                 </div>
                 <div class="card-text">
-                    {str(row.get("Rationale",""))[:220]}
+                    {str(row.get("Rationale",""))[:240]}
                 </div>
             </div>
             <div style="text-align:right;">
@@ -124,7 +135,7 @@ def render_card(row):
     </div>
     """, unsafe_allow_html=True)
 
-# ── FILE SELECTION ─────────────────────────────────────
+# ── FILE SELECT ────────────────────────────────────────
 files = list_files()
 selected_path = None
 
@@ -157,11 +168,12 @@ df = load_data(selected_path)
 
 # ── KPIs ───────────────────────────────────────────────
 total = len(df)
-high_risk = len(df[df["Risk Level"] >= 4]) if "Risk Level" in df.columns else 0
+high_risk = len(df[df["Risk Level"] >= 4]) if safe(df,"Risk Level") else 0
+risk_up = len(df[df["Alert Status"]=="📈 RISK INCREASED"]) if safe(df,"Alert Status") else 0
 
-st.info(f"⚠️ {high_risk} high-risk entities detected")
+st.info(f"⚠️ {high_risk} high-risk entities detected | {risk_up} increasing risk")
 
-c1, c2 = st.columns(2)
+c1,c2 = st.columns(2)
 c1.metric("Total", total)
 c2.metric("High Risk", high_risk)
 
@@ -170,14 +182,13 @@ tab1, tab2, tab3 = st.tabs(["🏠 Home", "🔍 Search", "📊 Insights"])
 
 # HOME
 with tab1:
-    top = df[df["Risk Level"] >= 4].head(10) if "Risk Level" in df.columns else df.head(10)
+    top = df[df["Risk Level"] >= 4].head(10) if safe(df,"Risk Level") else df.head(10)
     for _, row in top.iterrows():
         render_card(row)
 
 # SEARCH
 with tab2:
-
-    brands = df["Brand"].dropna().unique().tolist() if "Brand" in df.columns else []
+    brands = df["Brand"].dropna().unique().tolist() if safe(df,"Brand") else []
 
     def search_func(q):
         return [b for b in brands if q.lower() in b.lower()][:10]
@@ -187,27 +198,60 @@ with tab2:
     else:
         selected = st.selectbox("Search", [""] + brands)
 
+    c1,c2 = st.columns(2)
+
+    with c1:
+        risk_filter = st.multiselect("Risk Level", sorted(df["Risk Level"].unique(), reverse=True))
+
+    with c2:
+        reg_filter = st.multiselect("Regulator", df["Regulator Scope"].unique() if safe(df,"Regulator Scope") else [])
+
+    chip_cols = st.columns(6)
+    chips = ["high","new","up","licensed","crypto","clear"]
+
+    for i,key in enumerate(chips):
+        if chip_cols[i].button(key):
+            st.session_state["chip"] = key
+
     filtered = df.copy()
 
     if selected:
         filtered = filtered[filtered["Brand"] == selected]
 
+    if risk_filter:
+        filtered = filtered[filtered["Risk Level"].isin(risk_filter)]
+
+    if reg_filter:
+        filtered = filtered[filtered["Regulator Scope"].isin(reg_filter)]
+
+    chip = st.session_state.get("chip")
+
+    if chip == "high":
+        filtered = filtered[filtered["Risk Level"] >= 4]
+    elif chip == "new" and safe(df,"Alert Status"):
+        filtered = filtered[filtered["Alert Status"]=="🆕 NEW"]
+    elif chip == "up" and safe(df,"Alert Status"):
+        filtered = filtered[filtered["Alert Status"]=="📈 RISK INCREASED"]
+    elif chip == "licensed":
+        filtered = filtered[filtered["Risk Level"] == 0]
+    elif chip == "crypto":
+        filtered = filtered[df["Service Type"].str.contains("crypto", case=False, na=False)]
+
     st.dataframe(filtered, use_container_width=True)
 
 # INSIGHTS
 with tab3:
-    st.subheader("Risk Distribution")
-    if "Risk Level" in df.columns:
+    if safe(df,"Risk Level"):
         st.bar_chart(df["Risk Level"].value_counts())
 
-    st.subheader("Top Regulators")
-    if "Regulator Scope" in df.columns:
+    if safe(df,"Regulator Scope"):
         st.bar_chart(df["Regulator Scope"].value_counts().head(10))
 
-    st.subheader("Service Types")
-    if "Service Type" in df.columns:
+    if safe(df,"Service Type"):
         st.bar_chart(df["Service Type"].value_counts().head(10))
 
 # DOWNLOAD
 csv = df.to_csv(index=False).encode("utf-8-sig")
 st.download_button("Download CSV", csv)
+
+st.caption("Internal tool – not a legal determination")
