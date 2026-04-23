@@ -91,7 +91,7 @@ st.markdown("""
     }
     .suggestion-item:hover { background:#EFF6FF; color:#1E40AF; }
 
-    #MainMenu {visibility:hidden;} footer {visibility:hidden;} header {visibility:hidden;}
+    #MainMenu {visibility:hidden;} footer {visibility:hidden;}
 
     @media (max-width:768px) {
         [data-testid="stMetricValue"] { font-size:1.4rem !important; }
