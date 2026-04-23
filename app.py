@@ -748,14 +748,15 @@ with tab_home:
                 .encode(
                     x=alt.X("label:N", sort=alt.EncodingSortField("level", order="descending"),
                             axis=alt.Axis(labelColor=c["text_dim"], tickColor="transparent",
-                                          domainColor=c["border"], labelFont="DM Sans,sans-serif", labelAngle=0)),
+                                          domainColor=c["border"], labelFont="DM Sans,sans-serif",
+                                          labelAngle=0, title=None)),
                     y=alt.Y("count:Q", axis=alt.Axis(labelColor=c["text_dim"], gridColor=c["border"],
                                                       domainColor="transparent", tickColor="transparent",
-                                                      labelFont="DM Sans,sans-serif")),
+                                                      labelFont="DM Sans,sans-serif", title=None)),
                     color=alt.Color("label:N", scale=alt.Scale(domain=list(_RCOL.keys()), range=list(_RCOL.values())), legend=None),
                     tooltip=["label:N", alt.Tooltip("count:Q", title="Entities")],
                 )
-                .properties(height=200, title=alt.TitleParams("Entity count by risk level", color=c["text_dim"], fontSize=10))
+                .properties(height=200)
                 .configure_view(strokeOpacity=0, fill=c["card_bg"])
                 .configure(background=c["card_bg"]))
             st.altair_chart(_chart, use_container_width=True)
@@ -964,14 +965,23 @@ with tab_insights:
     RISK_COLORS = {"Critical":"#E11D48","High":"#F97316","Medium":"#EAB308",
                    "Monitor":"#4A7FD4","Low":"#4A7FD4","Licensed":"#10B981"}
 
-    def _chart_base(height=240):
-        return dict(
-            axis_x=alt.Axis(labelColor=c["text_dim"], tickColor="transparent",
-                            domainColor=c["border"], labelFont="DM Sans,sans-serif"),
-            axis_y=alt.Axis(labelColor=c["text_dim"], gridColor=c["border"],
-                            domainColor="transparent", tickColor="transparent",
-                            labelFont="DM Sans,sans-serif"),
-            height=height,
+    def _ax(labelAngle=0, title=None, grid=False):
+        """Return a plain Altair Axis — no __dict__ spreading."""
+        return alt.Axis(
+            labelColor=c["text_dim"],
+            tickColor="transparent",
+            domainColor=c["border"],
+            labelFont="DM Sans,sans-serif",
+            labelAngle=labelAngle,
+            title=title,
+            gridColor=c["border"] if grid else "transparent",
+        )
+
+    def _title(title, subtitle):
+        return alt.TitleParams(
+            title, subtitle=[subtitle],
+            color=c["text"], fontSize=12,
+            subtitleColor=c["text_dim"], subtitleFontSize=10,
         )
 
     def bar_chart(series, title, subtitle, color="#C9A84C", rotate=-30, height=240):
@@ -979,19 +989,15 @@ with tab_insights:
             st.markdown(f'<div class="empty-state"><div class="icon">📊</div><div class="title">{title}</div><div class="desc">No data available</div></div>', unsafe_allow_html=True)
             return
         df_c = series.reset_index(); df_c.columns = ["label","value"]
-        b = _chart_base(height)
         chart = (alt.Chart(df_c)
             .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, opacity=0.9)
             .encode(
-                x=alt.X("label:N", sort="-y", axis=alt.Axis(**b["axis_x"].__dict__, labelAngle=rotate, title=None)),
-                y=alt.Y("value:Q", axis=alt.Axis(**b["axis_y"].__dict__, title="Count")),
+                x=alt.X("label:N", sort="-y", axis=_ax(labelAngle=rotate)),
+                y=alt.Y("value:Q", axis=_ax(title="Count", grid=True)),
                 color=alt.value(color),
                 tooltip=["label:N", alt.Tooltip("value:Q", title="Count")],
             )
-            .properties(height=b["height"],
-                        title=alt.TitleParams(title, subtitle=[subtitle],
-                                              color=c["text"], fontSize=12,
-                                              subtitleColor=c["text_dim"], subtitleFontSize=10))
+            .properties(height=height, title=_title(title, subtitle))
             .configure_view(strokeOpacity=0, fill=c["card_bg"])
             .configure(background=c["card_bg"]))
         st.altair_chart(chart, use_container_width=True)
@@ -1000,22 +1006,18 @@ with tab_insights:
         if "Risk Level" not in df.columns: return
         rc = df["Risk Level"].value_counts().reset_index(); rc.columns = ["level","count"]
         rc["label"] = rc["level"].apply(lambda x: RISK_META.get(int(x),{}).get("label","Unknown"))
-        rc["color"] = rc["label"].map(RISK_COLORS).fillna("#7E8FAD")
-        b = _chart_base(height)
         chart = (alt.Chart(rc)
             .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, opacity=0.9)
             .encode(
                 x=alt.X("label:N", sort=alt.EncodingSortField("level", order="descending"),
-                        axis=alt.Axis(**b["axis_x"].__dict__, title=None, labelAngle=0)),
-                y=alt.Y("count:Q", axis=alt.Axis(**b["axis_y"].__dict__, title="Entity Count")),
-                color=alt.Color("label:N", scale=alt.Scale(domain=list(RISK_COLORS.keys()), range=list(RISK_COLORS.values())), legend=None),
+                        axis=_ax(labelAngle=0)),
+                y=alt.Y("count:Q", axis=_ax(title="Entity Count", grid=True)),
+                color=alt.Color("label:N",
+                    scale=alt.Scale(domain=list(RISK_COLORS.keys()), range=list(RISK_COLORS.values())),
+                    legend=None),
                 tooltip=["label:N", alt.Tooltip("count:Q", title="Entities")],
             )
-            .properties(height=b["height"],
-                        title=alt.TitleParams("Risk Level Distribution",
-                                              subtitle=["Entity count per risk category"],
-                                              color=c["text"], fontSize=12,
-                                              subtitleColor=c["text_dim"], subtitleFontSize=10))
+            .properties(height=height, title=_title("Risk Level Distribution","Entity count per risk category"))
             .configure_view(strokeOpacity=0, fill=c["card_bg"])
             .configure(background=c["card_bg"]))
         st.altair_chart(chart, use_container_width=True)
@@ -1085,22 +1087,18 @@ with tab_insights:
             _trend = pd.DataFrame(trend_rows).iloc[::-1]
             _trend_long = _trend.melt("Run", var_name="Category", value_name="Count")
             _tcolors = {"High/Critical":"#E11D48","Needs Review":"#EAB308","Licensed":"#10B981"}
-            b = _chart_base(260)
             _tchart = (alt.Chart(_trend_long)
                 .mark_line(point=True, strokeWidth=2)
                 .encode(
-                    x=alt.X("Run:N", axis=alt.Axis(**b["axis_x"].__dict__, title=None)),
-                    y=alt.Y("Count:Q", axis=alt.Axis(**b["axis_y"].__dict__, title="Entity Count")),
+                    x=alt.X("Run:N", axis=_ax(title=None)),
+                    y=alt.Y("Count:Q", axis=_ax(title="Entity Count", grid=True)),
                     color=alt.Color("Category:N", scale=alt.Scale(
                         domain=list(_tcolors.keys()), range=list(_tcolors.values())),
                         legend=alt.Legend(labelColor=c["text_dim"], titleColor=c["text_dim"])),
                     tooltip=["Run:N","Category:N", alt.Tooltip("Count:Q", title="Entities")],
                 )
-                .properties(height=b["height"],
-                            title=alt.TitleParams("Risk Trend Across Runs",
-                                                  subtitle=["Historical view of risk category counts per run"],
-                                                  color=c["text"], fontSize=12,
-                                                  subtitleColor=c["text_dim"], subtitleFontSize=10))
+                .properties(height=260, title=_title("Risk Trend Across Runs",
+                    "Historical view of risk category counts per run"))
                 .configure_view(strokeOpacity=0, fill=c["card_bg"])
                 .configure(background=c["card_bg"],
                            legend=alt.LegendConfig(labelColor=c["text_dim"], titleColor=c["text_dim"])))
