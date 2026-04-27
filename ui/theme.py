@@ -21,6 +21,7 @@ def inject_css(theme: Theme) -> None:
 
     st.markdown(f"""<style>
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+
     :root{{
         --bg:{bg}; --card:{card}; --card-h:{card_h};
         --border:{border}; --border-l:{border_l};
@@ -31,40 +32,52 @@ def inject_css(theme: Theme) -> None:
 
     /* ── BASE ── */
     html,body,[data-testid="stAppViewContainer"]{{
-        background:var(--bg)!important;color:var(--text);
+        background:var(--bg)!important; color:var(--text);
         font-family:'IBM Plex Sans',sans-serif;
     }}
     [data-testid="stAppViewContainer"]>.main{{background:var(--bg)!important;}}
     .block-container{{padding-top:1rem!important;padding-bottom:2rem!important;max-width:1400px!important;}}
 
-    /* ── FORCE SIDEBAR VISIBLE ── */
+    /* ── SIDEBAR — smooth transition, always visible ── */
     [data-testid="stSidebar"]{{
-        display:block!important;
-        visibility:visible!important;
-        min-width:260px!important;
-        width:260px!important;
-        transform:none!important;
+        background:var(--card)!important;
+        transition:width 0.3s ease, transform 0.3s ease!important;
+        min-width:240px!important;
     }}
     [data-testid="stSidebar"]>div:first-child{{
         background:var(--card)!important;
         border-right:1px solid var(--border);
         min-height:100vh;
+        padding-top:1rem;
     }}
-    /* Hide the sidebar collapse arrow button */
-    [data-testid="collapsedControl"]{{display:none!important;}}
-    button[kind="header"]{{display:none!important;}}
+    /* Sidebar collapse toggle — style it nicely */
+    [data-testid="collapsedControl"]{{
+        background:var(--card)!important;
+        border:1px solid var(--border)!important;
+        border-radius:0 8px 8px 0!important;
+        color:var(--dim)!important;
+        transition:all 0.2s!important;
+    }}
+    [data-testid="collapsedControl"]:hover{{
+        background:var(--card-h)!important;
+        border-color:var(--border-l)!important;
+        color:var(--text)!important;
+    }}
+    /* Sidebar text elements */
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] label{{
+        color:var(--dim)!important;
+    }}
+    [data-testid="stSidebar"] .stSelectbox>div>div{{
+        background:var(--bg)!important;
+        border-color:var(--border)!important;
+        color:var(--text)!important;
+    }}
 
     /* ── TOPBAR ── */
-    .uae-topbar{{
-        display:flex;align-items:center;justify-content:space-between;
-        padding:14px 20px;border-radius:var(--radius);
-        background:var(--card);border:1px solid var(--border);
-        margin-bottom:16px;position:relative;overflow:hidden;
-    }}
-    .uae-topbar::before{{
-        content:'';position:absolute;top:0;left:0;right:0;height:2px;
-        background:linear-gradient(90deg,#C9A84C,#3DA5E0,#34D399);
-    }}
+    .uae-topbar{{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);margin-bottom:16px;position:relative;overflow:hidden;}}
+    .uae-topbar::before{{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#C9A84C,#3DA5E0,#34D399);}}
     .uae-topbar h1{{font-size:16px;font-weight:700;color:var(--text);margin:0;letter-spacing:0.02em;}}
     .uae-topbar .sub{{font-size:10px;color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;margin-top:2px;font-family:'IBM Plex Mono',monospace;}}
 
@@ -117,58 +130,29 @@ def inject_css(theme: Theme) -> None:
     /* ── ACTION LABEL ── */
     .uae-action-lbl{{display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--accent);background:var(--accent-s);border-radius:4px;padding:2px 7px;font-family:'IBM Plex Mono',monospace;}}
 
-    /* ── SEARCH ROW ── */
-    .uae-row{{
-        display:grid;
-        grid-template-columns:2fr 1.2fr 1fr 0.8fr 2fr 120px;
-        gap:10px;
-        padding:10px 14px;
-        border-radius:8px;
-        border:1px solid var(--border);
-        margin-bottom:3px;
-        align-items:center;
-        transition:border-color 0.15s, background 0.15s;
-    }}
-    .uae-row:hover{{border-color:var(--border-l);background:var(--card-h);}}
-    .uae-row-header{{
-        display:grid;
-        grid-template-columns:2fr 1.2fr 1fr 0.8fr 2fr 120px;
-        gap:10px;
-        padding:6px 14px;
-        margin-bottom:4px;
-    }}
-    .uae-row-btn{{
-        display:inline-block;
-        padding:5px 10px;
-        border-radius:6px;
-        border:1px solid var(--border);
-        background:var(--card);
-        color:var(--dim);
-        font-size:11px;
-        font-weight:600;
-        font-family:'IBM Plex Sans',monospace;
-        cursor:pointer;
-        text-align:center;
-        width:100%;
-        transition:all 0.15s;
-    }}
-    .uae-row-btn:hover{{border-color:var(--accent);color:var(--accent);}}
-
     /* ── BUTTONS ── */
     .stButton>button{{border-radius:var(--radius-sm)!important;border:1px solid var(--border)!important;background:var(--card)!important;color:var(--dim)!important;font-weight:600!important;font-size:12px!important;font-family:'IBM Plex Sans',sans-serif!important;transition:all 0.15s!important;}}
     .stButton>button:hover{{border-color:var(--border-l)!important;color:var(--text)!important;background:var(--card-h)!important;}}
 
     /* ── TABS ── */
     [data-testid="stTabs"] [data-baseweb="tab-list"]{{background:transparent!important;border-bottom:1px solid var(--border)!important;gap:0!important;padding:0!important;margin-bottom:20px!important;}}
-    [data-testid="stTabs"] [data-baseweb="tab"]{{background:transparent!important;border:none!important;border-bottom:2px solid transparent!important;color:var(--muted)!important;font-weight:600!important;font-size:11px!important;letter-spacing:0.1em!important;text-transform:uppercase!important;padding:10px 20px!important;font-family:'IBM Plex Mono',monospace!important;}}
+    [data-testid="stTabs"] [data-baseweb="tab"]{{background:transparent!important;border:none!important;border-bottom:2px solid transparent!important;color:var(--muted)!important;font-weight:600!important;font-size:11px!important;letter-spacing:0.1em!important;text-transform:uppercase!important;padding:10px 20px!important;font-family:'IBM Plex Mono',monospace!important;transition:color 0.15s!important;}}
     [data-testid="stTabs"] [aria-selected="true"]{{color:var(--accent)!important;border-bottom-color:var(--accent)!important;}}
     [data-testid="stTabs"] [data-baseweb="tab-highlight"]{{display:none!important;}}
 
-    /* ── INPUTS ── */
+    /* ── INPUTS — theme-aware ── */
     [data-testid="stTextInput"] input{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;color:var(--text)!important;font-family:'IBM Plex Sans',sans-serif!important;font-size:13px!important;}}
-    [data-testid="stTextInput"] input:focus{{border-color:var(--accent)!important;box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important;}}
+    [data-testid="stTextInput"] input::placeholder{{color:var(--muted)!important;}}
+    [data-testid="stTextInput"] input:focus{{border-color:var(--accent)!important;box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important;outline:none!important;}}
     [data-testid="stSelectbox"]>div>div{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;color:var(--text)!important;}}
     [data-testid="stMultiSelect"]>div{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;}}
+    /* Multiselect tags */
+    [data-testid="stMultiSelect"] span[data-baseweb="tag"]{{background:var(--accent-s)!important;border-color:var(--accent)!important;color:var(--accent)!important;}}
+
+    /* ── DATAFRAME — theme-aware ── */
+    [data-testid="stDataFrame"]{{border:1px solid var(--border)!important;border-radius:var(--radius)!important;overflow:hidden!important;background:var(--card)!important;}}
+    [data-testid="stDataFrame"] th{{background:var(--bg)!important;color:var(--muted)!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.08em!important;text-transform:uppercase!important;font-family:'IBM Plex Mono',monospace!important;border-bottom:1px solid var(--border)!important;}}
+    [data-testid="stDataFrame"] td{{color:var(--text)!important;border-bottom:1px solid var(--border)!important;font-size:12px!important;}}
 
     /* ── METRICS ── */
     [data-testid="stMetric"]{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius)!important;padding:12px 16px!important;}}
@@ -177,7 +161,9 @@ def inject_css(theme: Theme) -> None:
 
     /* ── EXPANDER ── */
     [data-testid="stExpander"]{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius)!important;}}
-    [data-testid="stExpander"] summary{{font-size:13px!important;font-weight:600!important;color:var(--text)!important;font-family:'IBM Plex Sans',sans-serif!important;}}
+    [data-testid="stExpander"] summary{{font-size:13px!important;font-weight:600!important;color:var(--text)!important;font-family:'IBM Plex Sans',sans-serif!important;padding:14px 16px!important;}}
+    [data-testid="stExpander"] summary:hover{{background:var(--card-h)!important;}}
+    details[open] summary{{border-bottom:1px solid var(--border)!important;}}
 
     /* ── ALERTS ── */
     [data-testid="stSuccess"]{{background:rgba(5,150,105,0.08)!important;border:1px solid rgba(5,150,105,0.25)!important;border-radius:var(--radius-sm)!important;color:#34D399!important;font-size:12px!important;}}
@@ -190,9 +176,14 @@ def inject_css(theme: Theme) -> None:
 
     /* ── RADIO ── */
     [data-testid="stRadio"] label{{color:var(--dim)!important;font-size:12px!important;}}
+    [data-testid="stRadio"] [data-testid="stMarkdownContainer"] p{{color:var(--dim)!important;}}
 
-    /* ── SIDEBAR ELEMENTS ── */
-    [data-testid="stSidebar"] .stButton>button{{width:100%!important;}}
+    /* ── FILE UPLOADER ── */
+    [data-testid="stFileUploader"]>div{{background:var(--card)!important;border:1px dashed var(--border)!important;border-radius:var(--radius-sm)!important;}}
+
+    /* ── ALTAIR — theme-aware background ── */
+    .vega-embed {{background:transparent!important;}}
+    .vega-embed canvas{{background:var(--card)!important;}}
 
     /* ── MISC ── */
     hr{{border-color:var(--border)!important;margin:12px 0!important;}}
@@ -202,4 +193,8 @@ def inject_css(theme: Theme) -> None:
     ::-webkit-scrollbar{{width:5px;height:5px;}}
     ::-webkit-scrollbar-track{{background:var(--bg);}}
     ::-webkit-scrollbar-thumb{{background:var(--border-l);border-radius:3px;}}
+    ::-webkit-scrollbar-thumb:hover{{background:var(--muted);}}
+
+    /* ── CAPTION / SMALL TEXT ── */
+    .stCaption,[data-testid="stCaptionContainer"]{{color:var(--muted)!important;font-size:11px!important;font-family:'IBM Plex Mono',monospace!important;}}
     </style>""", unsafe_allow_html=True)
