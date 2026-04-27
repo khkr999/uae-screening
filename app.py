@@ -41,11 +41,54 @@ def _cached_previous(path_str):
 selected_path = sidebar.render(st.session_state)
 top_bar(run_label=now_label(), live=True)
 
+# ── No file loaded — show prominent upload in main area ──────────────────────
 if selected_path is None:
-    empty_state("No screening file loaded",
-                "Upload a UAE_Screening_*.xlsx file in the sidebar.", icon="📭")
+    st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
+
+    # Centre column
+    _, col, _ = st.columns([1, 2, 1])
+    with col:
+        st.markdown(
+            '<div style="background:var(--card);border:1px solid var(--border);'
+            'border-radius:14px;padding:40px 32px;text-align:center;">'
+            '<div style="font-size:40px;margin-bottom:16px;">📂</div>'
+            '<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
+            'No screening file loaded</div>'
+            '<div style="font-size:13px;color:var(--muted);margin-bottom:24px;">'
+            'Upload a <code style="background:rgba(201,168,76,0.10);color:var(--accent);'
+            'padding:2px 6px;border-radius:4px;">UAE_Screening_*.xlsx</code> file to begin'
+            '</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        # File uploader directly in the main area
+        nonce    = st.session_state.get("main_upload_nonce", 0)
+        uploaded = st.file_uploader(
+            "Upload screening file",
+            type=["xlsx"],
+            label_visibility="collapsed",
+            key=f"main_uploader_{nonce}",
+        )
+        if uploaded is not None:
+            try:
+                dest = services.save_upload(uploaded)
+                st.success(f"✓ Saved: {dest.name} — reloading…")
+                st.session_state["main_upload_nonce"] = nonce + 1
+                st.rerun()
+            except DataLoadError as exc:
+                st.error(exc.user_message)
+
+        st.markdown(
+            '<div style="text-align:center;margin-top:12px;font-size:11px;'
+            'color:var(--muted);">Or open the sidebar (arrow on the left) to select '
+            'an existing run</div>',
+            unsafe_allow_html=True,
+        )
+
     st.stop()
 
+
+# ── Load data ─────────────────────────────────────────────────────────────────
 try:
     df = _cached_load(str(selected_path), run_classifier=False)
 except DataLoadError as exc:
@@ -62,13 +105,15 @@ if df.empty:
 previous_df = _cached_previous(str(selected_path))
 metrics     = services.get_metrics(df, previous=previous_df)
 
-# ── Review Queue badge count ──────────────────────────────────────────────────
+# ── Review Queue tab badge ────────────────────────────────────────────────────
 review_stats  = state.get_review_stats(st.session_state)
-pending_count = review_stats.get("Open", 0) + review_stats.get("In Review", 0) + review_stats.get("Escalated", 0)
-queue_label   = f"📋 Review Queue ({pending_count})" if pending_count else "📋 Review Queue"
+pending       = (review_stats.get("Open", 0)
+                 + review_stats.get("In Review", 0)
+                 + review_stats.get("Escalated", 0))
+queue_label   = f"📋 Review Queue ({pending})" if pending else "📋 Review Queue"
 
+# ── Tabs ──────────────────────────────────────────────────────────────────────
 tabs = st.tabs(["📊 Overview", "🔎 Search & Filter", "📈 Insights", queue_label])
-
 with tabs[0]: overview.render(df, metrics, st.session_state)
 with tabs[1]: search.render(df, st.session_state)
 with tabs[2]: insights.render(df)
