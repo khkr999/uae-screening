@@ -1,4 +1,4 @@
-"""Search & Filter tab — autocomplete, styled rows, quick chips."""
+"""Search & Filter tab — text autocomplete, styled rows, quick chips."""
 from __future__ import annotations
 
 from html import escape
@@ -51,27 +51,43 @@ def render(df: pd.DataFrame, session) -> None:
     _exports(df)
 
 
-# ── TOOLBAR ────────────────────────────────────────────────────────────────
+# ── TOOLBAR ─────────────────────────────────────────────────────────────────
 def _toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
-    # Build autocomplete list: brands + services, max ~200 items combined
+    # Build suggestion list for autocomplete hint
     brands   = sorted(df[Col.BRAND].dropna().astype(str).unique().tolist()) if Col.BRAND in df.columns else []
-    services_ = sorted(df[Col.SERVICE].dropna().astype(str).unique().tolist()) if Col.SERVICE in df.columns else []
-    ac = [""] + brands[:100] + [s for s in services_[:100] if s not in brands]
+    services_= sorted(df[Col.SERVICE].dropna().astype(str).unique().tolist()) if Col.SERVICE in df.columns else []
+    all_opts = brands + [s for s in services_ if s not in brands]
 
     c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
 
     with c1:
-        idx = ac.index(fs.query) if fs.query in ac else 0
-        chosen = st.selectbox(
+        # Text input for typing — shows matching suggestions below
+        typed = st.text_input(
             "Search",
-            options=ac,
-            index=idx,
-            format_func=lambda x: "Search brand or service…" if x == "" else x,
+            value=fs.query,
+            placeholder="Search brand or service…",
             label_visibility="collapsed",
-            key="filter_ac_select",
+            key="filter_text_input",
         )
-        if chosen != fs.query:
-            state.update_filter(session, query=chosen)
+        # Show autocomplete suggestions when typing
+        if typed and typed != fs.query:
+            matches = [o for o in all_opts if typed.lower() in o.lower()][:8]
+            if matches:
+                st.markdown(
+                    '<div style="background:var(--card);border:1px solid var(--border);'
+                    'border-radius:8px;overflow:hidden;margin-top:2px;">',
+                    unsafe_allow_html=True,
+                )
+                for m in matches:
+                    if st.button(m, key=f"ac_{m}", use_container_width=True):
+                        state.update_filter(session, query=m)
+                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+        if typed != fs.query and not any(
+            typed.lower() in o.lower() for o in all_opts[:8]
+        ):
+            state.update_filter(session, query=typed)
             st.rerun()
 
     with c2:
@@ -109,7 +125,7 @@ def _toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
             st.rerun()
 
 
-# ── QUICK CHIPS ─────────────────────────────────────────────────────────────
+# ── QUICK CHIPS ──────────────────────────────────────────────────────────────
 def _chips(session, fs: FilterState) -> None:
     st.markdown(
         '<div style="margin:10px 0 6px 0;font-size:10px;font-weight:700;color:var(--muted);'
@@ -131,7 +147,7 @@ def _chips(session, fs: FilterState) -> None:
             st.rerun()
 
 
-# ── STATS BAR ───────────────────────────────────────────────────────────────
+# ── STATS BAR ────────────────────────────────────────────────────────────────
 def _stats(fs: FilterState, total: int) -> None:
     start = (fs.page - 1) * fs.page_size + 1
     end   = min(fs.page * fs.page_size, total)
@@ -141,26 +157,23 @@ def _stats(fs: FilterState, total: int) -> None:
         f'margin-bottom:8px;">'
         f'Showing <b style="color:var(--dim);">{start:,}&ndash;{end:,}</b>'
         f' of <b style="color:var(--dim);">{total:,}</b> entities'
-        f' &nbsp;&middot;&nbsp; Page {fs.page} / {pages}</div>',
+        f'&nbsp;&middot;&nbsp; Page {fs.page} / {pages}</div>',
         unsafe_allow_html=True,
     )
 
 
 # ── STYLED ENTITY ROWS ───────────────────────────────────────────────────────
 def _rows(page_df: pd.DataFrame, session) -> None:
-    # Header
-    st.markdown(
-        '<div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 0.8fr 2fr;'
-        'gap:12px;padding:6px 14px;margin-bottom:2px;">'
-        + "".join(
+    # Column header
+    hdr_cols = st.columns([2, 1.2, 1, 0.8, 2, 1])
+    headers  = ["Brand / Service", "Regulator", "Risk", "Conf.", "Classification", ""]
+    for col, h in zip(hdr_cols, headers):
+        col.markdown(
             f'<span style="font-size:9px;font-weight:700;letter-spacing:0.1em;'
             f'text-transform:uppercase;color:var(--muted);'
-            f'font-family:\'IBM Plex Mono\',monospace;">{h}</span>'
-            for h in ["Brand / Service", "Regulator", "Risk", "Conf.", "Classification"]
+            f'font-family:\'IBM Plex Mono\',monospace;">{h}</span>',
+            unsafe_allow_html=True,
         )
-        + "</div>",
-        unsafe_allow_html=True,
-    )
 
     for i, (_, row) in enumerate(page_df.iterrows()):
         level  = int(row.get(Col.RISK_LEVEL, 1)) if Col.RISK_LEVEL in page_df.columns else 1
@@ -172,36 +185,60 @@ def _rows(page_df: pd.DataFrame, session) -> None:
         eid    = str(row.get("id", i))
 
         bg     = _ROW_BG.get(level, "transparent")
-        stripe = "rgba(255,255,255,0.015)" if i % 2 == 0 else "transparent"
+        stripe = "rgba(255,255,255,0.018)" if i % 2 == 0 else "transparent"
         row_bg = bg if bg != "transparent" else stripe
         badge  = risk_badge_html(level)
-        clf_s  = (escape(clf[:58]) + "…") if len(clf) > 58 else escape(clf)
+        clf_s  = (escape(clf[:55]) + "…") if len(clf) > 55 else escape(clf)
 
-        st.markdown(
-            f'<div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 0.8fr 2fr;'
-            f'gap:12px;padding:10px 14px;border-radius:8px;background:{row_bg};'
-            f'border:1px solid var(--border);margin-bottom:3px;">'
-            f'<div>'
-            f'<div style="font-size:13px;font-weight:700;color:var(--text);">{escape(brand)}</div>'
-            f'<div style="font-size:10px;color:var(--muted);margin-top:1px;'
-            f'font-family:\'IBM Plex Mono\',monospace;">{escape(svc)}</div>'
-            f'</div>'
-            f'<div style="font-size:11px;color:var(--dim);align-self:center;'
-            f'font-family:\'IBM Plex Mono\',monospace;">{escape(reg)}</div>'
-            f'<div style="align-self:center;">{badge}</div>'
-            f'<div style="font-size:11px;color:var(--dim);align-self:center;'
-            f'font-family:\'IBM Plex Mono\',monospace;">{escape(conf)}</div>'
-            f'<div style="font-size:11px;color:var(--dim);align-self:center;">{clf_s}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
+        row_cols = st.columns([2, 1.2, 1, 0.8, 2, 1])
+
+        # Wrap the data columns in a visual background
+        container_style = (
+            f'background:{row_bg};border-radius:8px;'
+            f'border:1px solid var(--border);padding:10px 0;'
         )
 
-        if st.button("Open Details", key=f"row_open_{eid}_{i}"):
-            state.set_selected(st.session_state, eid)
-            st.rerun()
+        with row_cols[0]:
+            st.markdown(
+                f'<div style="{container_style} padding-left:14px;">'
+                f'<div style="font-size:13px;font-weight:700;color:var(--text);">{escape(brand)}</div>'
+                f'<div style="font-size:10px;color:var(--muted);margin-top:1px;'
+                f'font-family:\'IBM Plex Mono\',monospace;">{escape(svc)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with row_cols[1]:
+            st.markdown(
+                f'<div style="{container_style} font-size:11px;color:var(--dim);'
+                f'font-family:\'IBM Plex Mono\',monospace;padding-left:8px;">'
+                f'{escape(reg)}</div>',
+                unsafe_allow_html=True,
+            )
+        with row_cols[2]:
+            st.markdown(
+                f'<div style="{container_style} padding-left:8px;">{badge}</div>',
+                unsafe_allow_html=True,
+            )
+        with row_cols[3]:
+            st.markdown(
+                f'<div style="{container_style} font-size:11px;color:var(--dim);'
+                f'font-family:\'IBM Plex Mono\',monospace;padding-left:8px;">'
+                f'{escape(conf)}</div>',
+                unsafe_allow_html=True,
+            )
+        with row_cols[4]:
+            st.markdown(
+                f'<div style="{container_style} font-size:11px;color:var(--dim);'
+                f'padding-left:8px;">{clf_s}</div>',
+                unsafe_allow_html=True,
+            )
+        with row_cols[5]:
+            if st.button("Details", key=f"row_open_{eid}_{i}", use_container_width=True):
+                state.set_selected(st.session_state, eid)
+                st.rerun()
 
 
-# ── PAGINATION ───────────────────────────────────────────────────────────────
+# ── PAGINATION ────────────────────────────────────────────────────────────────
 def _pagination(session, fs: FilterState, total: int) -> None:
     pages = max(1, (total + fs.page_size - 1) // fs.page_size)
     c1, c2, c3, c4 = st.columns([1, 1, 4, 2])
@@ -228,7 +265,7 @@ def _pagination(session, fs: FilterState, total: int) -> None:
             st.rerun()
 
 
-# ── EXPORT ───────────────────────────────────────────────────────────────────
+# ── EXPORT ────────────────────────────────────────────────────────────────────
 def _exports(full_df: pd.DataFrame) -> None:
     section_header("Export Data")
     c1, c2, _ = st.columns([1, 1, 4])
