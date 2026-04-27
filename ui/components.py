@@ -11,29 +11,23 @@ from config import Col, RISK_BY_LEVEL
 
 
 def top_bar(run_label: str, live: bool = True) -> None:
-    """Top bar: title left, theme toggle + LIVE badge right. Always visible."""
     badge = ('<span class="uae-live"><span class="uae-live-dot"></span>LIVE</span>'
              if live else "")
 
     bar_col, btn_col = st.columns([7, 1])
-
     with bar_col:
         st.markdown(
             f'<div class="uae-topbar">'
-            f'<div>'
-            f'<h1>🛡️ UAE Regulatory Screening</h1>'
-            f'<div class="sub">Internal Risk Monitoring &nbsp;·&nbsp; {escape(run_label)}</div>'
-            f'</div>'
-            f'<div>{badge}</div>'
-            f'</div>',
+            f'<div><h1>🛡️ UAE Regulatory Screening</h1>'
+            f'<div class="sub">Internal Risk Monitoring &nbsp;·&nbsp; {escape(run_label)}</div></div>'
+            f'<div>{badge}</div></div>',
             unsafe_allow_html=True,
         )
-
     with btn_col:
         is_dark = st.session_state.get("theme", "dark") == "dark"
-        label   = "☀ Light" if is_dark else "☾ Dark"
         st.markdown('<div style="margin-top:14px;"></div>', unsafe_allow_html=True)
-        if st.button(label, key="topbar_theme_toggle", use_container_width=True):
+        if st.button("☀ Light" if is_dark else "☾ Dark",
+                     key="topbar_theme_toggle", use_container_width=True):
             import state as _state
             _state.toggle_theme(st.session_state)
             st.rerun()
@@ -42,7 +36,8 @@ def top_bar(run_label: str, live: bool = True) -> None:
 def kpi_card(label: str, value: str | int, hint: str = "",
              accent: str = "var(--accent)") -> None:
     st.markdown(
-        f'<div class="uae-card subtle nohover" style="border-top:2px solid {accent};cursor:default;">'
+        f'<div class="uae-card subtle nohover" '
+        f'style="border-top:2px solid {accent};cursor:default;">'
         f'<div class="uae-kpi-label">{escape(label)}</div>'
         f'<div class="uae-kpi-value">{escape(str(value))}</div>'
         f'<div class="uae-kpi-hint">{escape(hint)}</div>'
@@ -53,9 +48,11 @@ def kpi_card(label: str, value: str | int, hint: str = "",
 
 def risk_badge_html(level: int) -> str:
     tier = RISK_BY_LEVEL.get(int(level), RISK_BY_LEVEL[1])
-    return (f'<span class="uae-badge" style="background:{tier.accent_bg};'
-            f'color:{tier.color};border-color:{tier.color}33;">'
-            f'{escape(tier.label)}</span>')
+    return (
+        f'<span class="uae-badge" style="background:{tier.accent_bg};'
+        f'color:{tier.color};border-color:{tier.color}33;">'
+        f'{escape(tier.label)}</span>'
+    )
 
 
 def risk_badge(level: int) -> None:
@@ -75,8 +72,8 @@ def empty_state(title: str, desc: str = "", icon: str = "📭") -> None:
 
 def error_state(title: str, detail: str = "") -> None:
     st.markdown(
-        f'<div class="uae-card nohover" style="border-color:rgba(239,68,68,0.35);'
-        f'border-left:3px solid #EF4444;">'
+        f'<div class="uae-card nohover" '
+        f'style="border-color:rgba(239,68,68,0.35);border-left:3px solid #EF4444;">'
         f'<div style="color:#EF4444;font-weight:700;font-size:13px;">⚠ {escape(title)}</div>'
         f'<div style="color:var(--muted);font-size:12px;margin-top:6px;">{escape(detail)}</div>'
         f'</div>',
