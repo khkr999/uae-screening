@@ -1,287 +1,265 @@
+"""Search & Filter tab — autocomplete search, styled card rows, quick chips."""
 from __future__ import annotations
+
+from html import escape
+
+import pandas as pd
 import streamlit as st
-from config import THEMES, Theme
 
-def current_theme(session) -> Theme:
-    return THEMES.get(session.get("theme", "dark"), THEMES["dark"])
+from config import Col, PAGE_SIZE_OPTIONS, RISK_BY_LEVEL
+import services
+import state
+from models import FilterState
+from ui.components import empty_state, risk_badge_html, section_header
 
-def inject_css(theme: Theme) -> None:
-    st.markdown(f"""
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+_ROW_HIGHLIGHTS = {
+    5: "rgba(239,68,68,0.08)",
+    4: "rgba(248,113,113,0.06)",
+    3: "rgba(251,191,36,0.05)",
+}
 
-        :root {{
-            --bg: #0A0E1A;
-            --bg-secondary: #0F172A;
-            --card: #111827;
-            --card-hover: #161E2E;
-            --border: #1F2937;
-            --border-light: #2D3748;
-            --text: #E5E7EB;
-            --dim: #9CA3AF;
-            --muted: #6B7280;
-            --accent: #C9A84C;
-            --accent-soft: rgba(201,168,76,0.10);
-            --radius: 12px;
-            --radius-sm: 8px;
-        }}
+_CHIP_DEFS = [
+    ("highCritical", "High / Critical"),
+    ("needsReview",  "Needs Review"),
+    ("licensed",     "Licensed"),
+    ("crypto",       "Crypto / VA"),
+    ("uaePresent",   "UAE Present"),
+    ("unlicensed",   "Unlicensed"),
+]
 
-        *, *::before, *::after {{ box-sizing: border-box; }}
 
-        html, body, [data-testid="stAppViewContainer"] {{
-            background: var(--bg) !important;
-            color: var(--text);
-            font-family: 'IBM Plex Sans', sans-serif;
-        }}
-        [data-testid="stAppViewContainer"] > .main {{ background: var(--bg) !important; }}
-        [data-testid="stSidebar"] > div:first-child {{
-            background: var(--card) !important;
-            border-right: 1px solid var(--border);
-        }}
-        .block-container {{
-            padding-top: 1rem !important;
-            padding-bottom: 2rem !important;
-            max-width: 1400px !important;
-        }}
+def render(df: pd.DataFrame, session) -> None:
+    filter_state = state.get_filter(session)
+    options      = services.get_filter_options(df)
 
-        /* TOPBAR */
-        .uae-topbar {{
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 20px; border-radius: var(--radius);
-            background: var(--card); border: 1px solid var(--border);
-            margin-bottom: 16px; position: relative; overflow: hidden;
-        }}
-        .uae-topbar::before {{
-            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-            background: linear-gradient(90deg, #C9A84C 0%, #3DA5E0 50%, #34D399 100%);
-        }}
-        .uae-topbar h1 {{
-            font-size: 16px; font-weight: 700; color: var(--text); margin: 0; letter-spacing: 0.02em;
-        }}
-        .uae-topbar .sub {{
-            font-size: 10px; color: var(--muted); letter-spacing: 0.12em;
-            text-transform: uppercase; margin-top: 2px; font-family: 'IBM Plex Mono', monospace;
-        }}
+    _render_toolbar(session, filter_state, options, df)
+    _render_quick_chips(session, filter_state)
 
-        /* LIVE BADGE */
-        .uae-live {{
-            display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
-            border-radius: 999px; background: rgba(52,211,153,0.08);
-            border: 1px solid rgba(52,211,153,0.25); color: #34D399;
-            font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-            font-family: 'IBM Plex Mono', monospace;
-        }}
-        .uae-live-dot {{
-            width: 6px; height: 6px; border-radius: 999px; background: #34D399;
-            box-shadow: 0 0 0 3px rgba(52,211,153,0.2);
-            animation: pulsedot 2s infinite;
-        }}
-        @keyframes pulsedot {{
-            0%,100% {{ box-shadow: 0 0 0 3px rgba(52,211,153,0.2); }}
-            50% {{ box-shadow: 0 0 0 6px rgba(52,211,153,0.04); }}
-        }}
+    page_df, total_matching = services.get_page(df, filter_state)
 
-        /* CARDS */
-        .uae-card {{
-            background: var(--card); border: 1px solid var(--border);
-            border-radius: var(--radius); padding: 18px 20px;
-            transition: border-color 0.2s, background 0.2s;
-        }}
-        .uae-card:hover {{ border-color: var(--border-light); background: var(--card-hover); }}
-        .uae-card.subtle {{ padding: 14px 16px; }}
-        .uae-card.nohover:hover {{ border-color: var(--border); background: var(--card); }}
+    if total_matching == 0:
+        st.write("")
+        empty_state(
+            "No entities match these filters",
+            "Try clearing some filters or broadening your search.",
+        )
+        return
 
-        /* KPI */
-        .uae-kpi-label {{
-            color: var(--muted); font-size: 10px; font-weight: 700;
-            letter-spacing: 0.1em; text-transform: uppercase;
-            font-family: 'IBM Plex Mono', monospace;
-        }}
-        .uae-kpi-value {{
-            color: var(--text); font-size: 30px; font-weight: 700;
-            line-height: 1; margin-top: 6px; font-family: 'IBM Plex Mono', monospace;
-            letter-spacing: -0.02em;
-        }}
-        .uae-kpi-hint {{
-            color: var(--muted); font-size: 10px; margin-top: 6px;
-            font-family: 'IBM Plex Mono', monospace;
-        }}
+    st.write("")
+    _render_stats_bar(filter_state, total_matching)
+    _render_entity_rows(page_df, session)
+    _render_pagination(session, filter_state, total_matching)
+    st.write("")
+    _render_export_controls(df)
 
-        /* BADGE */
-        .uae-badge {{
-            display: inline-flex; align-items: center; gap: 5px;
-            padding: 3px 10px; border-radius: 999px; font-size: 10px;
-            font-weight: 700; border: 1px solid transparent;
-            letter-spacing: 0.06em; font-family: 'IBM Plex Mono', monospace; white-space: nowrap;
-        }}
 
-        /* SECTION HEADER */
-        .uae-sec-title {{
-            font-size: 11px; font-weight: 700; color: var(--dim);
-            letter-spacing: 0.12em; text-transform: uppercase;
-            font-family: 'IBM Plex Mono', monospace; margin-bottom: 2px;
-        }}
-        .uae-sec-sub {{ font-size: 11px; color: var(--muted); margin-bottom: 12px; }}
+# ---------------------------------------------------------------------------
+# Toolbar  — autocomplete via selectbox (no extra packages)
+# ---------------------------------------------------------------------------
+def _render_toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
+    brand_opts   = sorted(df[Col.BRAND].dropna().astype(str).unique().tolist()) if Col.BRAND in df.columns else []
+    service_opts = sorted(df[Col.SERVICE].dropna().astype(str).unique().tolist()) if Col.SERVICE in df.columns else []
+    # merge: brands first, then services not already in brands
+    ac_opts = [""] + brand_opts + [s for s in service_opts if s not in brand_opts]
 
-        /* ENTITY CARD */
-        .uae-entity-card {{
-            background: var(--card); border: 1px solid var(--border);
-            border-radius: var(--radius); padding: 16px; margin-bottom: 10px;
-            transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
-        }}
-        .uae-entity-card:hover {{
-            border-color: var(--border-light); transform: translateY(-1px);
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        }}
-        .uae-entity-brand {{ font-size: 14px; font-weight: 700; color: var(--text); }}
-        .uae-entity-meta {{
-            font-size: 11px; color: var(--dim); margin-top: 2px;
-            font-family: 'IBM Plex Mono', monospace;
-        }}
-        .uae-entity-rationale {{
-            font-size: 11px; color: var(--muted); margin-top: 10px;
-            line-height: 1.55; border-top: 1px solid var(--border); padding-top: 8px;
-        }}
-        .uae-action-label {{
-            display: inline-block; font-size: 9px; font-weight: 700;
-            letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
-            background: var(--accent-soft); border-radius: 4px; padding: 2px 7px;
-            margin-top: 8px; font-family: 'IBM Plex Mono', monospace;
-        }}
+    c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
 
-        /* SUMMARY ROW */
-        .uae-sum-row {{
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 9px 0; border-bottom: 1px solid var(--border);
-        }}
-        .uae-sum-row:last-child {{ border-bottom: none; }}
-        .uae-sum-label {{ color: var(--muted); font-size: 11px; font-family: 'IBM Plex Mono', monospace; }}
-        .uae-sum-value {{ color: var(--text); font-size: 12px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }}
+    with c1:
+        ac_idx = ac_opts.index(fs.query) if fs.query in ac_opts else 0
+        chosen = st.selectbox(
+            "Search",
+            options=ac_opts,
+            index=ac_idx,
+            format_func=lambda x: "Search brand or service…" if x == "" else x,
+            label_visibility="collapsed",
+            key="filter_ac_select",
+        )
+        if chosen != fs.query:
+            state.update_filter(session, query=chosen)
+            st.rerun()
 
-        /* RISK BAR */
-        .uae-bar-row {{ display: flex; align-items: center; gap: 10px; margin: 5px 0; }}
-        .uae-bar-label {{
-            width: 80px; font-size: 9px; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 0.08em; color: var(--muted); font-family: 'IBM Plex Mono', monospace; text-align: right;
-        }}
-        .uae-bar-track {{
-            flex: 1; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.05); overflow: hidden;
-        }}
-        .uae-bar-fill {{ height: 100%; border-radius: 999px; }}
-        .uae-bar-count {{
-            width: 28px; text-align: right; font-size: 11px; font-weight: 700;
-            color: var(--text); font-family: 'IBM Plex Mono', monospace;
-        }}
+    with c2:
+        risk_labels = {f"{t.label} ({t.level})": t.level for t in RISK_BY_LEVEL.values()}
+        selected = st.multiselect(
+            "Risk levels",
+            options=list(risk_labels.keys()),
+            default=[k for k, v in risk_labels.items() if v in fs.risk_levels],
+            placeholder="All risk levels",
+            label_visibility="collapsed",
+            key="filter_risk_input",
+        )
+        new_levels = sorted(risk_labels[k] for k in selected)
+        if new_levels != fs.risk_levels:
+            state.update_filter(session, risk_levels=new_levels)
+            st.rerun()
 
-        /* EMPTY */
-        .uae-empty {{
-            text-align: center; padding: 40px 20px; background: var(--card);
-            border: 1px solid var(--border); border-radius: var(--radius);
-        }}
-        .uae-empty-icon {{ font-size: 28px; margin-bottom: 10px; }}
-        .uae-empty-title {{ font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }}
-        .uae-empty-desc {{ font-size: 12px; color: var(--muted); }}
+    with c3:
+        regs = st.multiselect(
+            "Regulators",
+            options=options["regulators"],
+            default=fs.regulators,
+            placeholder="All regulators",
+            label_visibility="collapsed",
+            key="filter_reg_input",
+        )
+        if regs != fs.regulators:
+            state.update_filter(session, regulators=regs)
+            st.rerun()
 
-        /* BUTTONS */
-        .stButton > button {{
-            border-radius: var(--radius-sm) !important;
-            border: 1px solid var(--border) !important;
-            background: var(--card) !important;
-            color: var(--dim) !important;
-            font-weight: 600 !important; font-size: 12px !important;
-            font-family: 'IBM Plex Sans', sans-serif !important;
-            transition: all 0.15s !important;
-        }}
-        .stButton > button:hover {{
-            border-color: var(--border-light) !important;
-            color: var(--text) !important; background: var(--card-hover) !important;
-        }}
+    with c4:
+        st.markdown('<div style="margin-top:24px;"></div>', unsafe_allow_html=True)
+        if st.button("Clear", use_container_width=True, key="filter_clear_btn"):
+            session["filter_state"] = FilterState()
+            st.rerun()
 
-        /* TABS */
-        [data-testid="stTabs"] [data-baseweb="tab-list"] {{
-            background: transparent !important; border-bottom: 1px solid var(--border) !important;
-            gap: 0 !important; padding: 0 !important; margin-bottom: 20px !important;
-        }}
-        [data-testid="stTabs"] [data-baseweb="tab"] {{
-            background: transparent !important; border: none !important;
-            border-bottom: 2px solid transparent !important; color: var(--muted) !important;
-            font-weight: 600 !important; font-size: 11px !important;
-            letter-spacing: 0.1em !important; text-transform: uppercase !important;
-            padding: 10px 20px !important; font-family: 'IBM Plex Mono', monospace !important;
-            transition: color 0.15s !important;
-        }}
-        [data-testid="stTabs"] [aria-selected="true"] {{
-            color: var(--accent) !important; border-bottom-color: var(--accent) !important;
-        }}
-        [data-testid="stTabs"] [data-baseweb="tab-highlight"] {{ display: none !important; }}
 
-        /* DATAFRAME */
-        [data-testid="stDataFrame"] {{
-            border: 1px solid var(--border) !important; border-radius: var(--radius) !important; overflow: hidden !important;
-        }}
+# ---------------------------------------------------------------------------
+# Quick chips
+# ---------------------------------------------------------------------------
+def _render_quick_chips(session, fs: FilterState) -> None:
+    st.markdown(
+        '<div style="margin:10px 0 6px 0;font-size:10px;font-weight:700;'
+        'color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;'
+        'font-family:\'IBM Plex Mono\',monospace;">Quick Filters</div>',
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(len(_CHIP_DEFS) + 1)
+    for idx, (key, label) in enumerate(_CHIP_DEFS):
+        with cols[idx]:
+            active    = fs.quick_chip == key
+            btn_label = ("● " + label) if active else label
+            if st.button(btn_label, use_container_width=True, key=f"chip_{key}"):
+                state.update_filter(session, quick_chip=None if active else key)
+                st.rerun()
+    with cols[-1]:
+        if fs.quick_chip and st.button("Reset", key="chip_reset", use_container_width=True):
+            state.update_filter(session, quick_chip=None)
+            st.rerun()
 
-        /* INPUTS */
-        [data-testid="stTextInput"] input {{
-            background: var(--card) !important; border: 1px solid var(--border) !important;
-            border-radius: var(--radius-sm) !important; color: var(--text) !important;
-            font-family: 'IBM Plex Sans', sans-serif !important; font-size: 13px !important;
-        }}
-        [data-testid="stTextInput"] input:focus {{
-            border-color: var(--accent) !important;
-            box-shadow: 0 0 0 2px rgba(201,168,76,0.15) !important;
-        }}
 
-        /* SIDEBAR */
-        [data-testid="stSidebar"] .stButton > button {{ width: 100% !important; }}
+# ---------------------------------------------------------------------------
+# Stats bar
+# ---------------------------------------------------------------------------
+def _render_stats_bar(fs: FilterState, total_matching: int) -> None:
+    start       = (fs.page - 1) * fs.page_size + 1
+    end         = min(fs.page * fs.page_size, total_matching)
+    total_pages = max(1, (total_matching + fs.page_size - 1) // fs.page_size)
+    st.markdown(
+        f'<div style="font-size:11px;color:var(--muted);'
+        f'font-family:\'IBM Plex Mono\',monospace;margin-bottom:8px;padding:0 2px;">'
+        f'Showing <span style="color:var(--dim);font-weight:600;">{start:,}&ndash;{end:,}</span>'
+        f' of <span style="color:var(--dim);font-weight:600;">{total_matching:,}</span> entities'
+        f'&nbsp;&middot;&nbsp; Page {fs.page} / {total_pages}</div>',
+        unsafe_allow_html=True,
+    )
 
-        /* METRICS */
-        [data-testid="stMetric"] {{
-            background: var(--card) !important; border: 1px solid var(--border) !important;
-            border-radius: var(--radius) !important; padding: 12px 16px !important;
-        }}
-        [data-testid="stMetricLabel"] {{
-            color: var(--muted) !important; font-size: 10px !important; font-weight: 700 !important;
-            letter-spacing: 0.08em !important; text-transform: uppercase !important;
-            font-family: 'IBM Plex Mono', monospace !important;
-        }}
-        [data-testid="stMetricValue"] {{
-            color: var(--text) !important; font-size: 22px !important; font-family: 'IBM Plex Mono', monospace !important;
-        }}
 
-        /* EXPANDER */
-        [data-testid="stExpander"] {{
-            background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important;
-        }}
-        [data-testid="stExpander"] summary {{
-            font-size: 13px !important; font-weight: 600 !important; color: var(--text) !important;
-        }}
+# ---------------------------------------------------------------------------
+# Styled entity rows  (replaces raw st.dataframe)
+# ---------------------------------------------------------------------------
+def _render_entity_rows(page_df: pd.DataFrame, session) -> None:
+    # Column headers
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 0.8fr 2fr;'
+        'gap:12px;padding:6px 14px;margin-bottom:2px;">'
+        + "".join(
+            f'<span style="font-size:9px;font-weight:700;letter-spacing:0.1em;'
+            f'text-transform:uppercase;color:var(--muted);'
+            f'font-family:\'IBM Plex Mono\',monospace;">{h}</span>'
+            for h in ["Brand / Service", "Regulator", "Risk", "Conf.", "Classification"]
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
-        /* DOWNLOAD */
-        [data-testid="stDownloadButton"] > button {{
-            border-radius: var(--radius-sm) !important; border: 1px solid var(--border) !important;
-            background: var(--card) !important; color: var(--dim) !important; font-weight: 600 !important; font-size: 12px !important;
-        }}
-        [data-testid="stDownloadButton"] > button:hover {{
-            border-color: var(--accent) !important; color: var(--accent) !important;
-        }}
+    for i, (_, row) in enumerate(page_df.iterrows()):
+        level      = int(row.get(Col.RISK_LEVEL, 1)) if Col.RISK_LEVEL in page_df.columns else 1
+        brand      = str(row.get(Col.BRAND,         "—") or "—")
+        service    = str(row.get(Col.SERVICE,        "—") or "—")
+        regulator  = str(row.get(Col.REGULATOR,      "—") or "—")
+        clf        = str(row.get(Col.CLASSIFICATION, "—") or "—")
+        confidence = str(row.get(Col.CONFIDENCE,     "—") or "—")
+        entity_id  = str(row.get("id", i))
 
-        /* SUCCESS/INFO */
-        [data-testid="stSuccess"] {{
-            background: rgba(5,150,105,0.08) !important; border: 1px solid rgba(5,150,105,0.25) !important;
-            border-radius: var(--radius-sm) !important; color: #34D399 !important; font-size: 12px !important;
-        }}
-        [data-testid="stInfo"] {{
-            background: rgba(37,99,235,0.08) !important; border: 1px solid rgba(37,99,235,0.2) !important;
-            border-radius: var(--radius-sm) !important; color: var(--dim) !important; font-size: 12px !important;
-        }}
+        bg       = _ROW_HIGHLIGHTS.get(level, "transparent")
+        stripe   = "rgba(255,255,255,0.015)" if i % 2 == 0 else "transparent"
+        row_bg   = bg if bg != "transparent" else stripe
+        badge    = risk_badge_html(level)
+        clf_disp = (escape(clf[:58]) + "…") if len(clf) > 58 else escape(clf)
 
-        /* MISC */
-        hr {{ border-color: var(--border) !important; margin: 12px 0 !important; }}
-        footer, header {{ visibility: hidden !important; }}
-        #MainMenu {{ visibility: hidden !important; }}
-        [data-testid="stDeployButton"] {{ display: none !important; }}
-        ::-webkit-scrollbar {{ width: 5px; height: 5px; }}
-        ::-webkit-scrollbar-track {{ background: var(--bg); }}
-        ::-webkit-scrollbar-thumb {{ background: var(--border-light); border-radius: 3px; }}
-        </style>
-    """, unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="display:grid;grid-template-columns:2fr 1.2fr 1fr 0.8fr 2fr;'
+            f'gap:12px;padding:10px 14px;border-radius:8px;background:{row_bg};'
+            f'border:1px solid var(--border);margin-bottom:3px;">'
+            f'<div>'
+            f'<div style="font-size:13px;font-weight:700;color:var(--text);">{escape(brand)}</div>'
+            f'<div style="font-size:10px;color:var(--muted);margin-top:1px;'
+            f'font-family:\'IBM Plex Mono\',monospace;">{escape(service)}</div>'
+            f'</div>'
+            f'<div style="font-size:11px;color:var(--dim);align-self:center;'
+            f'font-family:\'IBM Plex Mono\',monospace;">{escape(regulator)}</div>'
+            f'<div style="align-self:center;">{badge}</div>'
+            f'<div style="font-size:11px;color:var(--dim);align-self:center;'
+            f'font-family:\'IBM Plex Mono\',monospace;">{escape(confidence)}</div>'
+            f'<div style="font-size:11px;color:var(--dim);align-self:center;">{clf_disp}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        open_key = f"row_open_{entity_id}_{i}"
+        if st.button("Open Details", key=open_key):
+            state.set_selected(st.session_state, entity_id)
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
+def _render_pagination(session, fs: FilterState, total_matching: int) -> None:
+    total_pages = max(1, (total_matching + fs.page_size - 1) // fs.page_size)
+    c1, c2, c3, c4 = st.columns([1, 1, 4, 2])
+
+    with c1:
+        if st.button("Prev", disabled=fs.page <= 1,
+                     use_container_width=True, key="page_prev"):
+            state.update_filter(session, page=max(1, fs.page - 1))
+            st.rerun()
+    with c2:
+        if st.button("Next", disabled=fs.page >= total_pages,
+                     use_container_width=True, key="page_next"):
+            state.update_filter(session, page=min(total_pages, fs.page + 1))
+            st.rerun()
+    with c4:
+        new_size = st.selectbox(
+            "Rows per page",
+            options=list(PAGE_SIZE_OPTIONS),
+            index=PAGE_SIZE_OPTIONS.index(fs.page_size)
+                  if fs.page_size in PAGE_SIZE_OPTIONS else 0,
+            label_visibility="collapsed",
+            key="page_size_select",
+        )
+        if new_size != fs.page_size:
+            state.update_filter(session, page_size=new_size, page=1)
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+def _render_export_controls(full_df: pd.DataFrame) -> None:
+    section_header("Export Data")
+    c1, c2, _ = st.columns([1, 1, 4])
+    with c1:
+        csv_bytes, csv_name, csv_mime = services.export(full_df, "csv")
+        st.download_button(
+            "Download CSV",
+            data=csv_bytes, file_name=csv_name, mime=csv_mime,
+            use_container_width=True, key="dl_csv",
+        )
+    with c2:
+        xlsx_bytes, xlsx_name, xlsx_mime = services.export(full_df, "xlsx")
+        st.download_button(
+            "Download Excel",
+            data=xlsx_bytes, file_name=xlsx_name, mime=xlsx_mime,
+            use_container_width=True, key="dl_xlsx",
+        )
