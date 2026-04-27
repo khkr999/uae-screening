@@ -1,4 +1,4 @@
-"""Session state helpers + persistent storage for annotations and workflow."""
+"""Session state helpers + persistent storage."""
 from __future__ import annotations
 
 import json
@@ -13,9 +13,9 @@ from models import FilterState
 
 logger = logging.getLogger(__name__)
 
-# ── Persistence file (same folder as screening data) ──────────────────────────
 _PERSIST_FILE: Path = DATA_DIR / ".screening_workspace.json"
 
+# Use only JSON-serializable types in defaults (no set)
 _DEFAULTS: dict[str, Any] = {
     "theme": "dark",
     "active_tab": "overview",
@@ -23,34 +23,31 @@ _DEFAULTS: dict[str, Any] = {
     "filter_state": None,
     "workflow_overrides": {},
     "annotations": {},
-    "watchlist": set(),
+    "watchlist": [],          # stored as list, converted to set only when needed
     "file_upload_nonce": 0,
 }
 
 
 # ── Disk helpers ──────────────────────────────────────────────────────────────
 def _load_persisted() -> dict:
-    """Load saved workspace from disk. Returns empty dict on any error."""
     try:
         if _PERSIST_FILE.exists():
-            raw = json.loads(_PERSIST_FILE.read_text(encoding="utf-8"))
-            # Convert watchlist back to set
-            if "watchlist" in raw and isinstance(raw["watchlist"], list):
-                raw["watchlist"] = set(raw["watchlist"])
-            return raw
+            return json.loads(_PERSIST_FILE.read_text(encoding="utf-8"))
     except Exception as exc:
-        logger.warning("Could not load workspace file: %s", exc)
+        logger.warning("Could not load workspace: %s", exc)
     return {}
 
 
 def _save_persisted(session) -> None:
-    """Save annotations, workflow, watchlist to disk."""
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        wl = session.get("watchlist", [])
+        if isinstance(wl, set):
+            wl = list(wl)
         payload = {
             "workflow_overrides": dict(session.get("workflow_overrides", {})),
             "annotations":        dict(session.get("annotations", {})),
-            "watchlist":          list(session.get("watchlist", set())),
+            "watchlist":          wl,
             "theme":              session.get("theme", "dark"),
         }
         _PERSIST_FILE.write_text(
@@ -58,19 +55,23 @@ def _save_persisted(session) -> None:
             encoding="utf-8",
         )
     except Exception as exc:
-        logger.warning("Could not save workspace file: %s", exc)
+        logger.warning("Could not save workspace: %s", exc)
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
 def init_state(session) -> None:
-    """Initialise session state, merging persisted data from disk."""
     for key, value in _DEFAULTS.items():
         if key not in session:
             session[key] = value
     if session.get("filter_state") is None:
         session["filter_state"] = FilterState()
 
-    # Load persisted data only once per browser session
+    # Ensure watchlist is always a list (never a set in session)
+    wl = session.get("watchlist", [])
+    if isinstance(wl, set):
+        session["watchlist"] = list(wl)
+
+    # Load persisted data once per browser session
     if not session.get("_workspace_loaded"):
         persisted = _load_persisted()
         if persisted.get("workflow_overrides"):
@@ -78,13 +79,14 @@ def init_state(session) -> None:
         if persisted.get("annotations"):
             session["annotations"] = persisted["annotations"]
         if persisted.get("watchlist"):
-            session["watchlist"] = persisted["watchlist"]
+            wl = persisted["watchlist"]
+            session["watchlist"] = list(wl) if not isinstance(wl, list) else wl
         if persisted.get("theme"):
             session["theme"] = persisted["theme"]
         session["_workspace_loaded"] = True
 
 
-# ── Generic getters/setters ───────────────────────────────────────────────────
+# ── Generic ───────────────────────────────────────────────────────────────────
 def get(session, key: str, default=None):
     return session.get(key, default)
 
@@ -93,7 +95,7 @@ def set_(session, key: str, value) -> None:
     session[key] = value
 
 
-# ── Filter state ──────────────────────────────────────────────────────────────
+# ── Filter ────────────────────────────────────────────────────────────────────
 def get_filter(session) -> FilterState:
     fs = session.get("filter_state")
     if fs is None:
@@ -138,15 +140,14 @@ def get_workflow(session, entity_id: str) -> str:
     return session.get("workflow_overrides", {}).get(entity_id, "Open")
 
 
-# ── Watchlist ─────────────────────────────────────────────────────────────────
+# ── Watchlist (stored as list, exposed as set for lookups) ───────────────────
 def toggle_watchlist(session, entity_id: str) -> bool:
-    """Toggle entity in watchlist. Returns True if now in watchlist."""
-    wl = set(session.get("watchlist", set()))
+    wl = list(session.get("watchlist", []))
     if entity_id in wl:
-        wl.discard(entity_id)
+        wl.remove(entity_id)
         in_wl = False
     else:
-        wl.add(entity_id)
+        wl.append(entity_id)
         in_wl = True
     session["watchlist"] = wl
     _save_persisted(session)
@@ -154,21 +155,17 @@ def toggle_watchlist(session, entity_id: str) -> bool:
 
 
 def in_watchlist(session, entity_id: str) -> bool:
-    return entity_id in session.get("watchlist", set())
+    return entity_id in session.get("watchlist", [])
 
 
 def get_watchlist(session) -> set:
-    return set(session.get("watchlist", set()))
+    return set(session.get("watchlist", []))
 
 
-# ── Annotations (persisted) ───────────────────────────────────────────────────
+# ── Annotations ───────────────────────────────────────────────────────────────
 def add_annotation(session, entity_id: str, text: str) -> None:
-    """Add a timestamped annotation for an entity and persist to disk."""
     notes = dict(session.get("annotations", {}))
-    entry = {
-        "text": text,
-        "ts":   datetime.now().strftime("%d %b %H:%M"),
-    }
+    entry = {"text": text, "ts": datetime.now().strftime("%d %b %H:%M")}
     notes[entity_id] = [*notes.get(entity_id, []), entry]
     session["annotations"] = notes
     _save_persisted(session)
@@ -182,7 +179,7 @@ def get_all_annotations(session) -> dict:
     return dict(session.get("annotations", {}))
 
 
-# ── Review stats (used by Review Queue tab) ───────────────────────────────────
+# ── Legacy compatibility (used by original add_annotation calls) ──────────────
 def get_review_stats(session) -> dict[str, int]:
     overrides = session.get("workflow_overrides", {})
     counts: dict[str, int] = {"Open": 0, "In Review": 0, "Escalated": 0, "Cleared": 0}
