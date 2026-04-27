@@ -1,1 +1,1 @@
-"""UI layer — pure presentation, composes services and state."""
+# empty file — do not add any imports here
