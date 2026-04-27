@@ -1644,7 +1644,7 @@ with tab_search:
         ):
             for brand in selected_brands:
                 set_action_required(brand, "INVESTIGATE THIS WEEK")
-                st.session_state.pop(f"row_select_{normalize_brand_key(brand)}", None)
+                st.session_state[f"row_select_{normalize_brand_key(brand)}"] = False
             st.session_state.search_selected_rows = []
             st.rerun()
         if footer_cols[1].button(
@@ -1656,7 +1656,7 @@ with tab_search:
             for brand in selected_brands:
                 set_status(brand, "REVIEWED")
                 log_workflow_action(brand, "reviewed")
-                st.session_state.pop(f"row_select_{normalize_brand_key(brand)}", None)
+                st.session_state[f"row_select_{normalize_brand_key(brand)}"] = False
             st.session_state.search_selected_rows = []
             st.rerun()
         footer_cols[2].markdown(
