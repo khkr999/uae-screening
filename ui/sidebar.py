@@ -14,6 +14,7 @@ from ui.components import empty_state
 
 def render(session) -> Path | None:
     with st.sidebar:
+        # ── Brand ──
         st.markdown(
             '<div style="padding:8px 0 16px 0;">'
             '<div style="font-size:15px;font-weight:700;color:var(--text);letter-spacing:0.02em;">'
@@ -26,7 +27,7 @@ def render(session) -> Path | None:
 
         _divider()
 
-        # ── THEME TOGGLE ──
+        # ── Theme Toggle ──
         is_dark = session.get("theme", "dark") == "dark"
         theme_label = "☀  Light Mode" if is_dark else "☾  Dark Mode"
         if st.button(theme_label, use_container_width=True, key="sidebar_theme_toggle"):
@@ -35,7 +36,7 @@ def render(session) -> Path | None:
 
         _divider()
 
-        # ── RUN SELECTOR ──
+        # ── Screening Run ──
         st.markdown(
             '<div style="font-size:10px;font-weight:700;color:var(--muted);'
             'letter-spacing:0.1em;text-transform:uppercase;'
@@ -57,20 +58,29 @@ def render(session) -> Path | None:
             )
             selected_path = options[choice]
         else:
-            empty_state("No screening files", "Upload a UAE_Screening_*.xlsx to begin.")
+            empty_state("No screening files",
+                        "Upload a UAE_Screening_*.xlsx to begin.")
 
         _divider()
 
-        # ── UPLOAD ──
+        # ── Upload ──
+        st.markdown(
+            '<div style="font-size:10px;font-weight:700;color:var(--muted);'
+            'letter-spacing:0.1em;text-transform:uppercase;'
+            'font-family:\'IBM Plex Mono\',monospace;margin-bottom:8px;">Upload Run</div>',
+            unsafe_allow_html=True,
+        )
         _render_upload(session)
 
         _divider()
 
-        # ── FOOTER ──
+        # ── Footer info ──
         runs_count = len(runs) if runs else 0
         st.markdown(
-            f'<div style="font-size:10px;color:var(--muted);font-family:\'IBM Plex Mono\',monospace;line-height:1.8;">'
-            f'<div>Runs archived: <span style="color:var(--dim);font-weight:600;">{runs_count}</span></div>'
+            f'<div style="font-size:10px;color:var(--muted);'
+            f'font-family:\'IBM Plex Mono\',monospace;line-height:1.8;">'
+            f'<div>Runs archived: '
+            f'<span style="color:var(--dim);font-weight:600;">{runs_count}</span></div>'
             f'<div style="margin-top:4px;word-break:break-all;font-size:9px;">{DATA_DIR}</div>'
             f'<div style="margin-top:8px;">Internal tool · not a legal determination.</div>'
             f'</div>',
@@ -88,12 +98,6 @@ def _divider() -> None:
 
 
 def _render_upload(session) -> None:
-    st.markdown(
-        '<div style="font-size:10px;font-weight:700;color:var(--muted);'
-        'letter-spacing:0.1em;text-transform:uppercase;'
-        'font-family:\'IBM Plex Mono\',monospace;margin-bottom:8px;">Upload Run</div>',
-        unsafe_allow_html=True,
-    )
     nonce = session.get("file_upload_nonce", 0)
     uploaded = st.file_uploader(
         "Drop file here",
