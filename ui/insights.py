@@ -8,30 +8,22 @@ import streamlit as st
 import services
 from ui.components import empty_state, section_header
 
-_BG = "#111827"
-_GRID = "#1F2937"
-_TEXT = "#6B7280"
-_LABEL = "#9CA3AF"
+_CARD_BG = "#111827"
+_GRID    = "#1F2937"
+_LABEL   = "#9CA3AF"
+_TITLE   = "#6B7280"
 
 
-def _base_config(chart):
-    return chart.configure_view(
-        stroke=None,
-        fill=_BG,
-    ).configure_axis(
-        gridColor=_GRID,
-        labelColor=_LABEL,
-        titleColor=_TEXT,
-        labelFont="IBM Plex Mono",
-        titleFont="IBM Plex Mono",
-        labelFontSize=10,
-        titleFontSize=10,
-    ).configure_legend(
-        labelColor=_LABEL,
-        titleColor=_TEXT,
-        labelFont="IBM Plex Mono",
-        titleFont="IBM Plex Mono",
-    )
+def _cfg(chart):
+    return (chart
+            .configure_view(stroke=None, fill=_CARD_BG)
+            .configure_axis(
+                gridColor=_GRID, labelColor=_LABEL, titleColor=_TITLE,
+                labelFont="IBM Plex Mono", titleFont="IBM Plex Mono",
+                labelFontSize=10, titleFontSize=10,
+            )
+            .configure_legend(labelColor=_LABEL, titleColor=_TITLE,
+                               labelFont="IBM Plex Mono", titleFont="IBM Plex Mono"))
 
 
 def render(df: pd.DataFrame) -> None:
@@ -39,52 +31,61 @@ def render(df: pd.DataFrame) -> None:
         empty_state("No data to visualise")
         return
 
-    insights = services.get_insights(df)
+    ins = services.get_insights(df)
+    total = len(df)
 
+    # ── Row 1 ──
     c1, c2 = st.columns(2, gap="medium")
     with c1:
-        _render_risk_chart(insights["risk_distribution"])
+        _risk_chart(ins["risk_distribution"], total)
     with c2:
-        _render_regulator_chart(insights["regulators"])
+        _regulator_chart(ins["regulators"])
 
     st.write("")
-    _render_service_chart(insights["services"])
+
+    # ── Row 2 ──
+    _service_chart(ins["services"])
 
 
-def _render_risk_chart(dist: pd.DataFrame) -> None:
-    section_header("Risk Distribution", "Entity counts per tier — current run")
+def _risk_chart(dist: pd.DataFrame, total: int) -> None:
+    high_count = int(dist[dist["level"] >= 4]["count"].sum())
+    pct = round(high_count / max(total, 1) * 100)
+    section_header(
+        "Risk Distribution",
+        f"High-risk entities represent {pct}% of this run ({high_count} of {total})"
+    )
     if dist["count"].sum() == 0:
         empty_state("No risk data")
         return
 
-    chart = _base_config(
+    chart = _cfg(
         alt.Chart(dist)
         .mark_bar(cornerRadiusEnd=4, size=22)
         .encode(
-            y=alt.Y("label:N",
-                    sort=alt.SortField("level", order="descending"),
-                    title=None,
-                    axis=alt.Axis(labelFontSize=10, labelFont="IBM Plex Mono")),
+            y=alt.Y("label:N", sort=alt.SortField("level", order="descending"),
+                    title=None, axis=alt.Axis(labelFontSize=10, labelFont="IBM Plex Mono")),
             x=alt.X("count:Q", title="Count",
                     axis=alt.Axis(format=",", labelFont="IBM Plex Mono", tickCount=5)),
             color=alt.Color("color:N", scale=None, legend=None),
-            tooltip=[
-                alt.Tooltip("label:N", title="Risk Tier"),
-                alt.Tooltip("count:Q", title="Entities", format=","),
-            ],
+            tooltip=[alt.Tooltip("label:N", title="Risk Tier"),
+                     alt.Tooltip("count:Q", title="Entities", format=",")],
         )
-        .properties(height=250, background=_BG)
+        .properties(height=250, background=_CARD_BG)
     )
     st.altair_chart(chart, use_container_width=True)
 
 
-def _render_regulator_chart(regs: pd.DataFrame) -> None:
-    section_header("Regulator Scope", "Top regulators by entity count")
+def _regulator_chart(regs: pd.DataFrame) -> None:
+    top = regs.iloc[0]["regulator"] if not regs.empty else "—"
+    section_header(
+        "Regulator Scope",
+        f"Top regulator: {top} — showing top 10 by entity count"
+    )
     if regs.empty:
         empty_state("No regulator data")
         return
 
-    chart = _base_config(
+    chart = _cfg(
         alt.Chart(regs)
         .mark_bar(cornerRadiusEnd=4, size=20, color="#C9A84C")
         .encode(
@@ -92,24 +93,26 @@ def _render_regulator_chart(regs: pd.DataFrame) -> None:
                     axis=alt.Axis(labelFontSize=10, labelFont="IBM Plex Mono", labelLimit=160)),
             x=alt.X("count:Q", title="Count",
                     axis=alt.Axis(format=",", labelFont="IBM Plex Mono", tickCount=5)),
-            tooltip=[
-                alt.Tooltip("regulator:N", title="Regulator"),
-                alt.Tooltip("count:Q",     title="Entities", format=","),
-            ],
+            tooltip=[alt.Tooltip("regulator:N", title="Regulator"),
+                     alt.Tooltip("count:Q",     title="Entities", format=",")],
         )
-        .properties(height=250, background=_BG)
+        .properties(height=250, background=_CARD_BG)
     )
     st.altair_chart(chart, use_container_width=True)
 
 
-def _render_service_chart(services_df: pd.DataFrame) -> None:
-    section_header("Service Mix", "Top service categories detected")
-    if services_df.empty:
+def _service_chart(svcs: pd.DataFrame) -> None:
+    top = svcs.iloc[0]["service"] if not svcs.empty else "—"
+    section_header(
+        "Service Mix",
+        f"Most common service type: {top} — showing top 10 categories"
+    )
+    if svcs.empty:
         empty_state("No service data")
         return
 
-    chart = _base_config(
-        alt.Chart(services_df)
+    chart = _cfg(
+        alt.Chart(svcs)
         .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4, color="#3DA5E0")
         .encode(
             x=alt.X("service:N", sort="-y", title=None,
@@ -117,11 +120,9 @@ def _render_service_chart(services_df: pd.DataFrame) -> None:
                                   labelFont="IBM Plex Mono", labelLimit=150)),
             y=alt.Y("count:Q", title="Count",
                     axis=alt.Axis(format=",", labelFont="IBM Plex Mono", tickCount=5)),
-            tooltip=[
-                alt.Tooltip("service:N", title="Service"),
-                alt.Tooltip("count:Q",   title="Entities", format=","),
-            ],
+            tooltip=[alt.Tooltip("service:N", title="Service"),
+                     alt.Tooltip("count:Q",   title="Entities", format=",")],
         )
-        .properties(height=280, background=_BG)
+        .properties(height=280, background=_CARD_BG)
     )
     st.altair_chart(chart, use_container_width=True)
