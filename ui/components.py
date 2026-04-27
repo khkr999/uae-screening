@@ -1,4 +1,4 @@
-"""Reusable UI atoms."""
+"""Reusable UI atoms — redesigned for professional dark dashboard."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -21,7 +21,7 @@ def top_bar(run_label: str, live: bool = True) -> None:
         <div class="uae-topbar">
             <div>
                 <h1>🛡️ UAE Regulatory Screening</h1>
-                <div class="sub">Internal risk monitoring · {escape(run_label)}</div>
+                <div class="sub">Internal Risk Monitoring &nbsp;·&nbsp; {escape(run_label)}</div>
             </div>
             <div>{badge}</div>
         </div>
@@ -39,7 +39,7 @@ def kpi_card(label: str,
              accent: str = "var(--accent)") -> None:
     st.markdown(
         f"""
-        <div class="uae-card subtle" style="border-top: 3px solid {accent};">
+        <div class="uae-card subtle nohover" style="border-top: 2px solid {accent}; cursor: default;">
             <div class="uae-kpi-label">{escape(label)}</div>
             <div class="uae-kpi-value">{escape(str(value))}</div>
             <div class="uae-kpi-hint">{escape(hint)}</div>
@@ -54,9 +54,12 @@ def kpi_card(label: str,
 # ---------------------------------------------------------------------------
 def risk_badge_html(level: int) -> str:
     tier = RISK_BY_LEVEL.get(int(level), RISK_BY_LEVEL[1])
-    return (f'<span class="uae-badge" '
-            f'style="background:{tier.accent_bg};color:{tier.color};'
-            f'border-color:{tier.color}40;">{escape(tier.label)}</span>')
+    return (
+        f'<span class="uae-badge" '
+        f'style="background:{tier.accent_bg};color:{tier.color};'
+        f'border-color:{tier.color}33;">'
+        f'{escape(tier.label)}</span>'
+    )
 
 
 def risk_badge(level: int) -> None:
@@ -64,19 +67,15 @@ def risk_badge(level: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Empty states
+# Empty / Error states
 # ---------------------------------------------------------------------------
 def empty_state(title: str, desc: str = "", icon: str = "📭") -> None:
     st.markdown(
         f"""
-        <div class="uae-card" style="text-align:center; padding: 36px 20px;">
-            <div style="font-size: 32px;">{icon}</div>
-            <div style="font-size: 15px; font-weight: 700; margin-top: 8px;">
-                {escape(title)}
-            </div>
-            <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">
-                {escape(desc)}
-            </div>
+        <div class="uae-empty">
+            <div class="uae-empty-icon">{icon}</div>
+            <div class="uae-empty-title">{escape(title)}</div>
+            <div class="uae-empty-desc">{escape(desc)}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -86,11 +85,11 @@ def empty_state(title: str, desc: str = "", icon: str = "📭") -> None:
 def error_state(title: str, detail: str = "") -> None:
     st.markdown(
         f"""
-        <div class="uae-card" style="border-color: rgba(214,60,84,0.35);">
-            <div style="color:#D63C54; font-weight:700; font-size:13px;">
+        <div class="uae-card nohover" style="border-color: rgba(239,68,68,0.35); border-left: 3px solid #EF4444;">
+            <div style="color:#EF4444; font-weight:700; font-size:13px; font-family:'IBM Plex Mono',monospace;">
                 ⚠ {escape(title)}
             </div>
-            <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">
+            <div style="color: var(--muted); font-size: 12px; margin-top: 6px;">
                 {escape(detail)}
             </div>
         </div>
@@ -100,62 +99,75 @@ def error_state(title: str, detail: str = "") -> None:
 
 
 # ---------------------------------------------------------------------------
-# Entity card (used on Overview priority queue)
+# Entity card (priority queue)
 # ---------------------------------------------------------------------------
 def entity_card(row: pd.Series, on_open_key: str) -> None:
-    brand = escape(str(row.get(Col.BRAND, "—")))
-    service = escape(str(row.get(Col.SERVICE, "—")))
-    regulator = escape(str(row.get(Col.REGULATOR, "—")))
-    level = int(row.get(Col.RISK_LEVEL, 1))
-    rationale = escape(str(row.get(Col.RATIONALE, ""))[:180])
+    brand    = escape(str(row.get(Col.BRAND,     "—")))
+    service  = escape(str(row.get(Col.SERVICE,   "—")))
+    regulator = escape(str(row.get(Col.REGULATOR,"—")))
+    level    = int(row.get(Col.RISK_LEVEL, 1))
+    rationale = escape(str(row.get(Col.RATIONALE, ""))[:200])
+    action   = escape(str(row.get(Col.ACTION, "")  or ""))
+
+    action_html = (
+        f'<div class="uae-action-label">{action}</div>'
+        if action else ""
+    )
+    rationale_html = (
+        f'<div class="uae-entity-rationale">{rationale}</div>'
+        if rationale else ""
+    )
 
     st.markdown(
         f"""
-        <div class="uae-card" style="margin-bottom: 8px;">
-            <div style="display:flex; justify-content:space-between;
-                        align-items:start; gap: 12px;">
-                <div style="min-width: 0; flex:1;">
-                    <div style="font-size: 15px; font-weight: 800;
-                                color: var(--text); margin-bottom: 2px;">
-                        {brand}
-                    </div>
-                    <div style="font-size: 12px; color: var(--dim);">
-                        {service} · {regulator}
-                    </div>
+        <div class="uae-entity-card">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                <div style="min-width:0; flex:1;">
+                    <div class="uae-entity-brand">{brand}</div>
+                    <div class="uae-entity-meta">{service} &nbsp;·&nbsp; {regulator}</div>
+                    {action_html}
                 </div>
-                <div>{risk_badge_html(level)}</div>
+                <div style="flex-shrink:0;">{risk_badge_html(level)}</div>
             </div>
-            {f'<div style="margin-top:10px;font-size:12px;color:var(--muted);">{rationale}</div>'
-             if rationale else ""}
+            {rationale_html}
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.button("Open details", key=on_open_key, use_container_width=True)
+    st.button("Open Details →", key=on_open_key, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
-# Small helpers
+# Section header
 # ---------------------------------------------------------------------------
 def section_header(title: str, subtitle: str = "") -> None:
+    sub_html = (
+        f'<div class="uae-sec-sub">{escape(subtitle)}</div>'
+        if subtitle else ""
+    )
     st.markdown(
         f"""
-        <div style="margin: 8px 0 8px 0;">
-            <div style="font-size: 16px; font-weight: 800; color: var(--text);">
-                {escape(title)}
-            </div>
-            {f'<div style="font-size:12px;color:var(--muted);">{escape(subtitle)}</div>'
-             if subtitle else ""}
+        <div style="margin: 4px 0 12px 0;">
+            <div class="uae-sec-title">{escape(title)}</div>
+            {sub_html}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
+# ---------------------------------------------------------------------------
+# Divider
+# ---------------------------------------------------------------------------
 def divider() -> None:
-    st.markdown('<div style="height:1px;background:var(--border);'
-                'margin: 10px 0;"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="height:1px;background:var(--border);margin:12px 0;"></div>',
+        unsafe_allow_html=True,
+    )
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 def now_label() -> str:
     return datetime.now().strftime("%d %b %Y, %H:%M")
