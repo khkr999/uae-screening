@@ -8,9 +8,7 @@ from config import Col, RISK_BY_LEVEL
 import services
 import state
 from models import RunMetrics
-from ui.components import (
-    empty_state, entity_card, kpi_card, section_header,
-)
+from ui.components import empty_state, entity_card, kpi_card, section_header
 
 
 def render(df: pd.DataFrame, metrics: RunMetrics, session) -> None:
@@ -74,10 +72,8 @@ def _render_summary(m: RunMetrics, df: pd.DataFrame) -> None:
         f'</div>'
         for label, value in rows
     )
-    st.markdown(
-        f'<div class="uae-card nohover">{rows_html}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="uae-card nohover">{rows_html}</div>',
+                unsafe_allow_html=True)
 
 
 def _render_risk_distribution(df: pd.DataFrame) -> None:
@@ -88,16 +84,15 @@ def _render_risk_distribution(df: pd.DataFrame) -> None:
     bars = []
     for _, r in dist.iterrows():
         width = (r["count"] / max_count) * 100
+        short = r["label"].split("/")[0].strip()
         bars.append(
             f'<div class="uae-bar-row">'
-            f'<span class="uae-bar-label">{r["label"].split("/")[0].strip()}</span>'
+            f'<span class="uae-bar-label">{short}</span>'
             f'<div class="uae-bar-track">'
             f'<div class="uae-bar-fill" style="width:{width:.1f}%;background:{r["color"]};"></div>'
             f'</div>'
             f'<span class="uae-bar-count">{r["count"]}</span>'
             f'</div>'
         )
-    st.markdown(
-        f'<div class="uae-card nohover">{"".join(bars)}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown(f'<div class="uae-card nohover">{"".join(bars)}</div>',
+                unsafe_allow_html=True)
