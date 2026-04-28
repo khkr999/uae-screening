@@ -25,12 +25,6 @@ st.set_page_config(
 
 state.init_state(st.session_state)
 
-# ── SIGN OUT (hardcoded, no dependencies) ────────────────────────────────────
-with st.sidebar:
-    if st.button("⏻ Sign out", key="signout_top"):
-        st.session_state["current_user"] = ""
-        st.rerun()
-
 # ── LOGIN GATE ────────────────────────────────────────────────────────────────
 if not auth.is_logged_in(st.session_state):
     auth.render_login(st.session_state)
@@ -53,13 +47,6 @@ def _cached_previous(path_str):
 
 # ── SIDEBAR (with sign out) ───────────────────────────────────────────────────
 selected_path = sidebar.render(st.session_state)
-
-# Sign out always renders — independent of sidebar.py auth calls
-with st.sidebar:
-    st.markdown('---')
-    if st.button('⏻  Sign out', use_container_width=True, key='app_signout'):
-        st.session_state['current_user'] = ''
-        st.rerun()
 
 # ── TOP BAR ───────────────────────────────────────────────────────────────────
 top_bar(run_label=now_label(), live=True)
