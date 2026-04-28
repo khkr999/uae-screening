@@ -1,141 +1,145 @@
+"""Reusable UI atoms — Bloomberg terminal aesthetic."""
 from __future__ import annotations
-import logging, sys, os
-sys.path.insert(0, os.path.dirname(__file__))
+
+from datetime import datetime
+from html import escape
+
+import pandas as pd
 import streamlit as st
-from exceptions import DataLoadError, ValidationError
-import services, state, auth
-import ui.drawer as drawer
-import ui.insights as insights
-import ui.overview as overview
-import ui.search as search
-import ui.sidebar as sidebar
-import ui.review_queue as review_queue
-from ui.components import error_state, empty_state, now_label, top_bar
-from ui.theme import current_theme, inject_css
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("uae_screening.app")
-
-st.set_page_config(
-    page_title="UAE Regulatory Screening",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-state.init_state(st.session_state)
-
-# ── LOGIN GATE — must happen before anything else ─────────────────────────────
-if not auth.is_logged_in(st.session_state):
-    auth.render_login(st.session_state)
-    st.stop()
-
-# ── Inject theme after login (so dark mode applies immediately) ───────────────
-inject_css(current_theme(st.session_state))
+from config import Col, RISK_BY_LEVEL
 
 
-@st.cache_data(show_spinner="Loading screening data…")
-def _cached_load(path_str, run_classifier):
-    return services.load_run(path_str, run_classifier=run_classifier)
+# ── Risk colors ───────────────────────────────────────────────────────────────
+_RISK_CLASSES = {
+    0: ("licensed", "Licensed"),
+    1: ("low",      "Low"),
+    2: ("monitor",  "Monitor"),
+    3: ("medium",   "Medium"),
+    4: ("high",     "High"),
+    5: ("critical", "Critical"),
+}
 
 
-@st.cache_data(show_spinner=False)
-def _cached_previous(path_str):
-    from pathlib import Path as _P
-    return services.load_previous_df(services.list_runs(), _P(path_str))
+def risk_pill_html(level: int) -> str:
+    cls, label = _RISK_CLASSES.get(int(level), ("low", "Low"))
+    return (
+        f'<span class="uae-risk-badge uae-pill {cls}">'
+        f'<span class="uae-risk-dot" style="background:currentColor;"></span>'
+        f'{escape(label.upper())}</span>'
+    )
 
 
-selected_path = sidebar.render(st.session_state)
-top_bar(run_label=now_label(), live=True)
-
-# ── No file loaded ────────────────────────────────────────────────────────────
-if selected_path is None:
-    st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 2, 1])
-
-    with col:
-        if auth.is_owner(st.session_state):
-            # Owners: show upload card
-            st.markdown(
-                '<div style="background:var(--card);border:1px solid var(--border);'
-                'border-radius:14px;padding:40px 32px;text-align:center;">'
-                '<div style="font-size:40px;margin-bottom:16px;">📂</div>'
-                '<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
-                'No screening file loaded</div>'
-                '<div style="font-size:13px;color:var(--muted);margin-bottom:24px;">'
-                'Upload a <code style="background:rgba(201,168,76,0.10);color:var(--accent);'
-                'padding:2px 6px;border-radius:4px;">UAE_Screening_*.xlsx</code> file to begin'
-                '</div></div>',
-                unsafe_allow_html=True,
-            )
-            nonce    = st.session_state.get("main_upload_nonce", 0)
-            uploaded = st.file_uploader(
-                "Upload screening file", type=["xlsx"],
-                label_visibility="collapsed",
-                key=f"main_uploader_{nonce}",
-            )
-            if uploaded is not None:
-                try:
-                    dest = services.save_upload(uploaded)
-                    st.success(f"✓ Saved: {dest.name} — reloading…")
-                    st.session_state["main_upload_nonce"] = nonce + 1
-                    st.rerun()
-                except DataLoadError as exc:
-                    st.error(exc.user_message)
-        else:
-            # Analysts: friendly waiting screen
-            user = auth.current_user(st.session_state)
-            st.markdown(
-                f'<div style="background:var(--card);border:1px solid var(--border);'
-                f'border-radius:14px;padding:40px 32px;text-align:center;">'
-                f'<div style="font-size:40px;margin-bottom:16px;">⏳</div>'
-                f'<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
-                f'Welcome, {user}</div>'
-                f'<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">'
-                f'No screening run is available yet.</div>'
-                f'<div style="font-size:12px;color:var(--muted);">'
-                f'Ask an owner to upload a screening file — it will appear here automatically.</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-    st.stop()
+# ── Compatibility aliases for older modules ──────────────────────────────────
+# review_queue.py and insights.py still import these names
+risk_badge_html = risk_pill_html
 
 
-# ── Load data ─────────────────────────────────────────────────────────────────
-try:
-    df = _cached_load(str(selected_path), run_classifier=False)
-except DataLoadError as exc:
-    error_state("Failed to load the file", exc.user_message); st.stop()
-except ValidationError as exc:
-    error_state("File is not valid", exc.user_message); st.stop()
-except Exception as exc:
-    logger.exception("Unexpected error")
-    error_state("Unexpected error", str(exc)); st.stop()
+def risk_badge(level: int) -> None:
+    """Legacy helper — renders the risk pill via st.markdown."""
+    st.markdown(risk_pill_html(level), unsafe_allow_html=True)
 
-if df.empty:
-    empty_state("Empty dataset", "No rows after validation."); st.stop()
 
-previous_df = _cached_previous(str(selected_path))
-metrics     = services.get_metrics(df, previous=previous_df)
+# ── Regulator colors ─────────────────────────────────────────────────────────
+_REG_CLASSES = {
+    "cbuae":      "cbuae",
+    "vara":       "vara",
+    "adgm":       "adgm",
+    "fsra":       "fsra",
+    "dfsa":       "dfsa",
+    "government": "gov",
+}
 
-# ── Review Queue badge ────────────────────────────────────────────────────────
-review_stats = state.get_review_stats(st.session_state)
-pending      = sum(review_stats.get(s, 0) for s in ("Open", "In Review", "Escalated"))
-queue_label  = f"📋 Review Queue ({pending})" if pending else "📋 Review Queue"
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-tabs = st.tabs(["📊 Overview", "🔎 Search & Filter", "📈 Insights", queue_label])
-with tabs[0]: overview.render(df, metrics, st.session_state)
-with tabs[1]: search.render(df, st.session_state)
-with tabs[2]: insights.render(df)
-with tabs[3]: review_queue.render(df, st.session_state)
+def regulator_pill_html(reg: str) -> str:
+    if not reg or pd.isna(reg):
+        return '<span class="uae-reg other">N/A</span>'
+    reg_str = str(reg).strip()
+    reg_low = reg_str.lower()
+    cls = "other"
+    label = reg_str.split("_")[0].upper() if "_" in reg_str else reg_str.upper()
+    for key, c in _REG_CLASSES.items():
+        if key in reg_low:
+            cls = c
+            label = key.upper()
+            break
+    return f'<span class="uae-reg {cls}">{escape(label[:8])}</span>'
 
-drawer.render(df, st.session_state)
 
-st.markdown(
-    '<div style="text-align:center;color:var(--muted);font-size:11px;'
-    'padding:24px 0 8px 0;">'
-    'Internal screening tool &nbsp;·&nbsp; not a legal determination &nbsp;·&nbsp; '
-    'Data refreshed every screening run.</div>',
-    unsafe_allow_html=True,
-)
+# ── Status pills ──────────────────────────────────────────────────────────────
+def risk_up_pill() -> str:
+    return '<span class="uae-pill risk-up">↑ RISK UP</span>'
+
+
+def new_pill() -> str:
+    return '<span class="uae-pill new">+ NEW</span>'
+
+
+def trend_arrow(value: int, kind: str = "up") -> str:
+    """Returns a small ↑N badge or empty if 0."""
+    if value <= 0:
+        return ""
+    cls = "new" if kind == "new" else "up"
+    return f'<span class="uae-kpi-trend {cls}">↑{value}</span>'
+
+
+# ── Required action label ────────────────────────────────────────────────────
+def action_label(action: str) -> str:
+    """Convert action string into a short readable label."""
+    if not action or pd.isna(action):
+        return "—"
+    a = str(action).strip().lower()
+    if "investigate" in a:    return "Immediate enhanced due diligence required"
+    if "review this month" in a: return "Annual compliance review"
+    if "review" in a:         return "Compliance review"
+    if "monitor" in a:        return "Routine monitoring"
+    if "no action" in a:      return "No action needed"
+    return str(action)[:40]
+
+
+# ── Empty / error ─────────────────────────────────────────────────────────────
+def empty_state(title: str, desc: str = "", icon: str = "📭") -> None:
+    st.markdown(
+        f'<div class="uae-empty">'
+        f'<div class="uae-empty-icon">{icon}</div>'
+        f'<div class="uae-empty-title">{escape(title)}</div>'
+        f'<div class="uae-empty-desc">{escape(desc)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def error_state(title: str, detail: str = "") -> None:
+    st.markdown(
+        f'<div style="background:var(--card);border:1px solid var(--border);'
+        f'border-left:3px solid var(--critical);border-radius:12px;'
+        f'padding:16px 20px;">'
+        f'<div style="color:var(--critical);font-weight:700;font-size:13px;">'
+        f'⚠ {escape(title)}</div>'
+        f'<div style="color:var(--muted);font-size:12px;margin-top:6px;">'
+        f'{escape(detail)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── Section header ────────────────────────────────────────────────────────────
+def section_header(title: str, badge: str = "") -> None:
+    badge_html = f'<span class="uae-section-badge">{escape(badge)}</span>' if badge else ''
+    st.markdown(
+        f'<div class="uae-section">'
+        f'<div class="uae-section-title">{escape(title)}</div>'
+        f'{badge_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def now_label() -> str:
+    return datetime.now().strftime("%d %b %Y, %H:%M")
+
+
+def short_brand(name: str, max_len: int = 28) -> str:
+    name = str(name or "").strip()
+    return name if len(name) <= max_len else name[:max_len - 1] + "…"
