@@ -1,246 +1,210 @@
-"""Insights tab — theme-aware charts, richer storytelling."""
+"""Insights tab — fixed KPI strip, plain number axes, correct licensed count."""
 from __future__ import annotations
 
-import altair as alt
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
+from config import Col, HIGH_RISK_THRESHOLD, REVIEW_MIN, REVIEW_MAX, RISK_BY_LEVEL
 import services
-import state
-from config import RISK_BY_LEVEL, Col
-from ui.components import empty_state, section_header
-
-
-def _chart_colors(session) -> dict:
-    """Return chart colors matching current theme."""
-    is_dark = session.get("theme", "dark") == "dark"
-    return {
-        "bg":    "#111827" if is_dark else "#FFFFFF",
-        "grid":  "#1F2937" if is_dark else "#E2E8F0",
-        "label": "#9CA3AF" if is_dark else "#6B7280",
-        "title": "#6B7280" if is_dark else "#374151",
-    }
-
-
-def _cfg(chart, colors: dict):
-    return (
-        chart
-        .configure_view(stroke=None, fill=colors["bg"])
-        .configure_axis(
-            gridColor=colors["grid"],
-            labelColor=colors["label"],
-            titleColor=colors["title"],
-            labelFont="IBM Plex Mono",
-            titleFont="IBM Plex Mono",
-            labelFontSize=10,
-            titleFontSize=10,
-        )
-        .configure_legend(
-            labelColor=colors["label"],
-            titleColor=colors["title"],
-            labelFont="IBM Plex Mono",
-            titleFont="IBM Plex Mono",
-        )
-    )
+from ui.components import section_header, empty_state
 
 
 def render(df: pd.DataFrame) -> None:
-    session = st.session_state
     if df.empty:
-        empty_state("No data to visualise")
+        empty_state("No data", "Upload a screening file to see insights.")
         return
 
-    ins    = services.get_insights(df)
-    total  = len(df)
-    colors = _chart_colors(session)
+    _kpi_strip(df)
+    st.markdown('<div style="height:16px;"></div>', unsafe_allow_html=True)
 
-    # ── Summary KPI strip ──
-    _summary_strip(ins["risk_distribution"], total)
-    st.write("")
+    left, right = st.columns(2, gap="large")
+    with left:
+        _risk_chart(df)
+    with right:
+        _regulator_chart(df)
 
-    # ── Row 1: Risk + Regulator ──
-    c1, c2 = st.columns(2, gap="medium")
-    with c1:
-        _risk_chart(ins["risk_distribution"], total, colors)
-    with c2:
-        _regulator_chart(ins["regulators"], colors)
+    st.markdown('<div style="height:16px;"></div>', unsafe_allow_html=True)
+    _service_chart(df)
 
-    st.write("")
-
-    # ── Row 2: Service mix ──
-    _service_chart(ins["services"], colors)
-
-    st.write("")
-
-    # ── Row 3: Risk breakdown table ──
-    _risk_breakdown_table(ins["risk_distribution"], total)
+    st.markdown(
+        '<div style="text-align:center;font-size:10px;color:var(--muted);'
+        'padding:16px 0 4px 0;font-family:\'IBM Plex Mono\',monospace;">'
+        'CBUAE Register — February 2026 snapshot</div>',
+        unsafe_allow_html=True,
+    )
 
 
-# ── SUMMARY STRIP ─────────────────────────────────────────────────────────────
-def _summary_strip(dist: pd.DataFrame, total: int) -> None:
-    critical = int(dist[dist["level"] == 5]["count"].sum())
-    high     = int(dist[dist["level"] == 4]["count"].sum())
-    medium   = int(dist[dist["level"] == 3]["count"].sum())
-    licensed = int(dist[dist["level"] == 0]["count"].sum())
-    high_pct = round((critical + high) / max(total, 1) * 100)
+# ── KPI STRIP ─────────────────────────────────────────────────────────────────
+def _kpi_strip(df: pd.DataFrame) -> None:
+    rl  = df[Col.RISK_LEVEL].fillna(99).astype(int) if Col.RISK_LEVEL    in df.columns else pd.Series([99] * len(df))
+    clf = df[Col.CLASSIFICATION].fillna("").astype(str) if Col.CLASSIFICATION in df.columns else pd.Series([""] * len(df))
 
-    cards = [
-        ("#EF4444", "Critical",    critical,              f"{round(critical/max(total,1)*100)}% of run"),
-        ("#F87171", "High Risk",   high,                  f"{round(high/max(total,1)*100)}% of run"),
-        ("#FBBF24", "Medium",      medium,                f"{round(medium/max(total,1)*100)}% of run"),
-        ("#34D399", "Licensed",    licensed,              f"{round(licensed/max(total,1)*100)}% of run"),
-        ("#C9A84C", "High+Crit %", f"{high_pct}%",       f"{critical + high} entities need action"),
+    critical  = int((rl >= 5).sum())
+    high      = int(((rl >= HIGH_RISK_THRESHOLD) & (rl < 5)).sum())
+    medium    = int((rl == 3).sum())
+    monitor   = int((rl == 2).sum())
+    low       = int((rl == 1).sum())
+    # Licensed = Risk Level 0 OR classification contains LICENSED
+    licensed  = int(((rl == 0) | clf.str.contains("LICENSED", case=False, na=False)).sum())
+    total     = len(df)
+
+    high_pct = round((high + critical) / max(total, 1) * 100)
+
+    kpis = [
+        ("Critical",    critical,  "#DC2626", f"{round(critical/max(total,1)*100)}% of run"),
+        ("High Risk",   high,      "#EF4444", f"{high_pct}% of run"),
+        ("Medium",      medium,    "#F59E0B", f"{round(medium/max(total,1)*100)}% of run"),
+        ("Monitor",     monitor,   "#818CF8", f"{round(monitor/max(total,1)*100)}% of run"),
+        ("Low",         low,       "#3DA5E0", f"{round(low/max(total,1)*100)}% of run"),
+        ("Licensed",    licensed,  "#059669", f"{round(licensed/max(total,1)*100)}% of run"),
+        ("High+Crit %", f"{high_pct}%", "#C9A84C", f"{critical + high} entities need action"),
     ]
 
-    cols = st.columns(5)
-    for col, (color, label, value, hint) in zip(cols, cards):
-        col.markdown(
-            f'<div style="background:var(--card);border:1px solid var(--border);'
-            f'border-top:2px solid {color};border-radius:12px;padding:12px 14px;">'
-            f'<div style="font-size:9px;font-weight:700;letter-spacing:0.1em;'
-            f'text-transform:uppercase;color:var(--muted);font-family:\'IBM Plex Mono\',monospace;">'
-            f'{label}</div>'
-            f'<div style="font-size:26px;font-weight:700;color:var(--text);margin-top:4px;'
-            f'font-family:\'IBM Plex Mono\',monospace;letter-spacing:-0.02em;">{value}</div>'
-            f'<div style="font-size:10px;color:var(--muted);margin-top:4px;'
-            f'font-family:\'IBM Plex Mono\',monospace;">{hint}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    cols = st.columns(len(kpis))
+    for col, (label, value, color, hint) in zip(cols, kpis):
+        with col:
+            col.markdown(
+                f'<div style="background:var(--card);border:1px solid var(--border);'
+                f'border-top:2px solid {color};border-radius:10px;'
+                f'padding:12px 14px;text-align:center;">'
+                f'<div style="font-size:9px;font-weight:700;letter-spacing:0.1em;'
+                f'text-transform:uppercase;color:var(--muted);'
+                f'font-family:\'IBM Plex Mono\',monospace;margin-bottom:4px;">'
+                f'{escape(label)}</div>'
+                f'<div style="font-size:24px;font-weight:800;color:{color};'
+                f'font-family:\'IBM Plex Mono\',monospace;line-height:1;">'
+                f'{escape(str(value))}</div>'
+                f'<div style="font-size:9px;color:var(--muted);margin-top:4px;'
+                f'font-family:\'IBM Plex Mono\',monospace;">{escape(hint)}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 
 # ── RISK DISTRIBUTION CHART ───────────────────────────────────────────────────
-def _risk_chart(dist: pd.DataFrame, total: int, colors: dict) -> None:
-    high_count = int(dist[dist["level"] >= 4]["count"].sum())
-    pct        = round(high_count / max(total, 1) * 100)
-    section_header(
-        "Risk Distribution",
-        f"High-risk entities: {pct}% of this run ({high_count} of {total} entities)"
-    )
-    if dist["count"].sum() == 0:
-        empty_state("No risk data")
-        return
+def _risk_chart(df: pd.DataFrame) -> None:
+    section_header("Risk Distribution",
+                   f"High-risk entities: {int((df[Col.RISK_LEVEL].fillna(0).astype(int) >= HIGH_RISK_THRESHOLD).sum())} "
+                   f"of {len(df)} total" if Col.RISK_LEVEL in df.columns else "")
 
-    chart = _cfg(
-        alt.Chart(dist)
-        .mark_bar(cornerRadiusEnd=5, size=24)
-        .encode(
-            y=alt.Y("label:N",
-                    sort=alt.SortField("level", order="descending"),
-                    title=None,
-                    axis=alt.Axis(labelFontSize=10, labelFont="IBM Plex Mono", labelLimit=120)),
-            x=alt.X("count:Q", title="Entity Count",
-                    axis=alt.Axis(format=",", labelFont="IBM Plex Mono", tickCount=5)),
-            color=alt.Color("color:N", scale=None, legend=None),
-            tooltip=[
-                alt.Tooltip("label:N",  title="Risk Tier"),
-                alt.Tooltip("count:Q",  title="Entities", format=","),
-            ],
-        )
-        .properties(height=260, background=colors["bg"]),
-        colors,
-    )
-    st.altair_chart(chart, use_container_width=True)
+    rl = df[Col.RISK_LEVEL].fillna(99).astype(int) if Col.RISK_LEVEL in df.columns else pd.Series(dtype=int)
+    clf = df[Col.CLASSIFICATION].fillna("").astype(str) if Col.CLASSIFICATION in df.columns else pd.Series([""] * len(df))
 
+    rows = []
+    for tier in sorted(RISK_BY_LEVEL.values(), key=lambda t: t.level, reverse=True):
+        count = int((rl == tier.level).sum())
+        # Licensed row: use max of risk==0 count vs classification match
+        if tier.level == 0:
+            count = max(count, int(clf.str.contains("LICENSED", case=False, na=False).sum()))
+        rows.append({"label": tier.label, "count": count, "color": tier.color})
 
-# ── REGULATOR CHART ───────────────────────────────────────────────────────────
-def _regulator_chart(regs: pd.DataFrame, colors: dict) -> None:
-    top = regs.iloc[0]["regulator"] if not regs.empty else "—"
-    section_header(
-        "Regulator Scope",
-        f"Dominant regulator: {top} — top 10 by entity count"
-    )
-    if regs.empty:
-        empty_state("No regulator data")
-        return
+    # Filter empty tiers
+    rows = [r for r in rows if r["count"] > 0]
+    if not rows:
+        empty_state("No data", ""); return
 
-    chart = _cfg(
-        alt.Chart(regs)
-        .mark_bar(cornerRadiusEnd=5, size=22, color="#C9A84C")
-        .encode(
-            y=alt.Y("regulator:N", sort="-x", title=None,
-                    axis=alt.Axis(labelFontSize=10, labelFont="IBM Plex Mono", labelLimit=160)),
-            x=alt.X("count:Q", title="Entity Count",
-                    axis=alt.Axis(format=",", labelFont="IBM Plex Mono", tickCount=5)),
-            tooltip=[
-                alt.Tooltip("regulator:N", title="Regulator"),
-                alt.Tooltip("count:Q",     title="Entities", format=","),
-            ],
-        )
-        .properties(height=260, background=colors["bg"]),
-        colors,
-    )
-    st.altair_chart(chart, use_container_width=True)
+    max_count = max(r["count"] for r in rows)
 
-
-# ── SERVICE MIX CHART ─────────────────────────────────────────────────────────
-def _service_chart(svcs: pd.DataFrame, colors: dict) -> None:
-    top = svcs.iloc[0]["service"] if not svcs.empty else "—"
-    section_header(
-        "Service Mix",
-        f"Leading service category: {top} — showing top 10"
-    )
-    if svcs.empty:
-        empty_state("No service data")
-        return
-
-    chart = _cfg(
-        alt.Chart(svcs)
-        .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5, color="#3DA5E0")
-        .encode(
-            x=alt.X("service:N", sort="-y", title=None,
-                    axis=alt.Axis(labelAngle=-35, labelFontSize=10,
-                                  labelFont="IBM Plex Mono", labelLimit=140)),
-            y=alt.Y("count:Q", title="Entity Count",
-                    axis=alt.Axis(format=",", labelFont="IBM Plex Mono", tickCount=5)),
-            tooltip=[
-                alt.Tooltip("service:N", title="Service"),
-                alt.Tooltip("count:Q",   title="Entities", format=","),
-            ],
-        )
-        .properties(height=280, background=colors["bg"]),
-        colors,
-    )
-    st.altair_chart(chart, use_container_width=True)
-
-
-# ── RISK BREAKDOWN TABLE ──────────────────────────────────────────────────────
-def _risk_breakdown_table(dist: pd.DataFrame, total: int) -> None:
-    section_header("Risk Tier Breakdown", "Full breakdown by tier with percentage share")
-
-    rows_html = ""
-    for _, r in dist.sort_values("level", ascending=False).iterrows():
-        count = int(r["count"])
-        if count == 0:
-            continue
-        pct   = round(count / max(total, 1) * 100)
-        color = r["color"]
-        width = (count / max(dist["count"].max(), 1)) * 100
-
-        rows_html += (
-            f'<div style="display:grid;grid-template-columns:130px 1fr 60px 50px;'
-            f'gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">'
-            f'<span style="font-size:11px;color:var(--dim);font-family:\'IBM Plex Mono\',monospace;">'
-            f'{r["label"]}</span>'
-            f'<div style="height:6px;border-radius:999px;background:rgba(128,128,128,0.10);overflow:hidden;">'
-            f'<div style="height:100%;width:{width:.1f}%;background:{color};border-radius:999px;"></div>'
-            f'</div>'
-            f'<span style="font-size:11px;font-weight:700;color:var(--text);'
-            f'font-family:\'IBM Plex Mono\',monospace;text-align:right;">{count}</span>'
-            f'<span style="font-size:10px;color:var(--muted);font-family:\'IBM Plex Mono\',monospace;'
-            f'text-align:right;">{pct}%</span>'
+    bars_html = ""
+    for r in rows:
+        width = (r["count"] / max_count) * 100
+        short = r["label"].split("/")[0].strip()
+        bars_html += (
+            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+            f'<span style="font-size:10px;color:var(--muted);width:80px;text-align:right;'
+            f'font-family:\'IBM Plex Mono\',monospace;flex-shrink:0;">{escape(short)}</span>'
+            f'<div style="flex:1;height:18px;background:rgba(128,128,128,0.08);border-radius:4px;overflow:hidden;">'
+            f'<div style="height:100%;width:{width:.1f}%;background:{r["color"]};border-radius:4px;'
+            f'transition:width 0.4s ease;"></div></div>'
+            f'<span style="font-size:11px;font-weight:700;color:var(--dim);width:36px;'
+            f'font-family:\'IBM Plex Mono\',monospace;flex-shrink:0;">{r["count"]}</span>'
             f'</div>'
         )
-
-    header = (
-        f'<div style="display:grid;grid-template-columns:130px 1fr 60px 50px;'
-        f'gap:12px;padding:6px 0;border-bottom:2px solid var(--border);margin-bottom:2px;">'
-        f'{"".join(f"<span style=\"font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);font-family:\'IBM Plex Mono\',monospace;\">{h}</span>" for h in ["Tier", "Distribution", "Count", "Share"])}'
-        f'</div>'
-    )
 
     st.markdown(
         f'<div style="background:var(--card);border:1px solid var(--border);'
-        f'border-radius:12px;padding:12px 20px;">{header}{rows_html}</div>',
+        f'border-radius:12px;padding:16px 20px;">{bars_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── REGULATOR CHART ───────────────────────────────────────────────────────────
+def _regulator_chart(df: pd.DataFrame) -> None:
+    regs = services.get_insights(df)["regulators"]
+    if regs.empty:
+        section_header("Regulator Scope")
+        empty_state("No regulator data", ""); return
+
+    dominant = regs.iloc[0]["regulator"] if not regs.empty else "—"
+    section_header("Regulator Scope", f"Dominant: {dominant} — top 10 by entity count")
+
+    max_count = int(regs["count"].max()) if not regs.empty else 1
+    bars_html = ""
+    colors = ["#C9A84C", "#3DA5E0", "#818CF8", "#34D399", "#F87171",
+              "#FBBF24", "#60A5FA", "#A78BFA", "#4ADE80", "#F472B6"]
+
+    for i, (_, row) in enumerate(regs.iterrows()):
+        width = (int(row["count"]) / max_count) * 100
+        color = colors[i % len(colors)]
+        label = str(row["regulator"])[:22]
+        count = int(row["count"])
+        bars_html += (
+            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+            f'<span style="font-size:10px;color:var(--muted);width:110px;text-align:right;'
+            f'font-family:\'IBM Plex Mono\',monospace;flex-shrink:0;'
+            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{escape(label)}</span>'
+            f'<div style="flex:1;height:18px;background:rgba(128,128,128,0.08);border-radius:4px;overflow:hidden;">'
+            f'<div style="height:100%;width:{width:.1f}%;background:{color};border-radius:4px;'
+            f'transition:width 0.4s ease;"></div></div>'
+            f'<span style="font-size:11px;font-weight:700;color:var(--dim);width:36px;'
+            f'font-family:\'IBM Plex Mono\',monospace;flex-shrink:0;">{count}</span>'
+            f'</div>'
+        )
+
+    st.markdown(
+        f'<div style="background:var(--card);border:1px solid var(--border);'
+        f'border-radius:12px;padding:16px 20px;">{bars_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── SERVICE MIX CHART ─────────────────────────────────────────────────────────
+def _service_chart(df: pd.DataFrame) -> None:
+    svcs = services.get_insights(df)["services"]
+    if svcs.empty:
+        section_header("Service Mix")
+        empty_state("No service data", ""); return
+
+    leading = svcs.iloc[0]["service"] if not svcs.empty else "—"
+    section_header("Service Mix", f"Leading: {leading[:40]} — top 10")
+
+    max_count = int(svcs["count"].max()) if not svcs.empty else 1
+    colors = ["#3DA5E0", "#C9A84C", "#818CF8", "#34D399", "#F87171",
+              "#FBBF24", "#60A5FA", "#A78BFA", "#4ADE80", "#F472B6"]
+
+    bars_html = ""
+    for i, (_, row) in enumerate(svcs.iterrows()):
+        width = (int(row["count"]) / max_count) * 100
+        color = colors[i % len(colors)]
+        label = str(row["service"])[:35]
+        count = int(row["count"])
+        bars_html += (
+            f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
+            f'<span style="font-size:10px;color:var(--muted);width:200px;text-align:right;'
+            f'font-family:\'IBM Plex Mono\',monospace;flex-shrink:0;'
+            f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{escape(label)}</span>'
+            f'<div style="flex:1;height:18px;background:rgba(128,128,128,0.08);border-radius:4px;overflow:hidden;">'
+            f'<div style="height:100%;width:{width:.1f}%;background:{color};border-radius:4px;'
+            f'transition:width 0.4s ease;"></div></div>'
+            f'<span style="font-size:11px;font-weight:700;color:var(--dim);width:36px;'
+            f'font-family:\'IBM Plex Mono\',monospace;flex-shrink:0;">{count}</span>'
+            f'</div>'
+        )
+
+    st.markdown(
+        f'<div style="background:var(--card);border:1px solid var(--border);'
+        f'border-radius:12px;padding:16px 20px;">{bars_html}</div>',
         unsafe_allow_html=True,
     )
