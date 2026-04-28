@@ -3,7 +3,7 @@ import logging, sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 import streamlit as st
 from exceptions import DataLoadError, ValidationError
-import services, state
+import services, state, auth
 import ui.drawer as drawer
 import ui.insights as insights
 import ui.overview as overview
@@ -24,6 +24,13 @@ st.set_page_config(
 )
 
 state.init_state(st.session_state)
+
+# ── LOGIN GATE — must happen before anything else ─────────────────────────────
+if not auth.is_logged_in(st.session_state):
+    auth.render_login(st.session_state)
+    st.stop()
+
+# ── Inject theme after login (so dark mode applies immediately) ───────────────
 inject_css(current_theme(st.session_state))
 
 
@@ -41,50 +48,56 @@ def _cached_previous(path_str):
 selected_path = sidebar.render(st.session_state)
 top_bar(run_label=now_label(), live=True)
 
-# ── No file loaded — show prominent upload in main area ──────────────────────
+# ── No file loaded ────────────────────────────────────────────────────────────
 if selected_path is None:
     st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
-
-    # Centre column
     _, col, _ = st.columns([1, 2, 1])
+
     with col:
-        st.markdown(
-            '<div style="background:var(--card);border:1px solid var(--border);'
-            'border-radius:14px;padding:40px 32px;text-align:center;">'
-            '<div style="font-size:40px;margin-bottom:16px;">📂</div>'
-            '<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
-            'No screening file loaded</div>'
-            '<div style="font-size:13px;color:var(--muted);margin-bottom:24px;">'
-            'Upload a <code style="background:rgba(201,168,76,0.10);color:var(--accent);'
-            'padding:2px 6px;border-radius:4px;">UAE_Screening_*.xlsx</code> file to begin'
-            '</div></div>',
-            unsafe_allow_html=True,
-        )
-
-        # File uploader directly in the main area
-        nonce    = st.session_state.get("main_upload_nonce", 0)
-        uploaded = st.file_uploader(
-            "Upload screening file",
-            type=["xlsx"],
-            label_visibility="collapsed",
-            key=f"main_uploader_{nonce}",
-        )
-        if uploaded is not None:
-            try:
-                dest = services.save_upload(uploaded)
-                st.success(f"✓ Saved: {dest.name} — reloading…")
-                st.session_state["main_upload_nonce"] = nonce + 1
-                st.rerun()
-            except DataLoadError as exc:
-                st.error(exc.user_message)
-
-        st.markdown(
-            '<div style="text-align:center;margin-top:12px;font-size:11px;'
-            'color:var(--muted);">Or open the sidebar (arrow on the left) to select '
-            'an existing run</div>',
-            unsafe_allow_html=True,
-        )
-
+        if auth.is_owner(st.session_state):
+            # Owners: show upload card
+            st.markdown(
+                '<div style="background:var(--card);border:1px solid var(--border);'
+                'border-radius:14px;padding:40px 32px;text-align:center;">'
+                '<div style="font-size:40px;margin-bottom:16px;">📂</div>'
+                '<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
+                'No screening file loaded</div>'
+                '<div style="font-size:13px;color:var(--muted);margin-bottom:24px;">'
+                'Upload a <code style="background:rgba(201,168,76,0.10);color:var(--accent);'
+                'padding:2px 6px;border-radius:4px;">UAE_Screening_*.xlsx</code> file to begin'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
+            nonce    = st.session_state.get("main_upload_nonce", 0)
+            uploaded = st.file_uploader(
+                "Upload screening file", type=["xlsx"],
+                label_visibility="collapsed",
+                key=f"main_uploader_{nonce}",
+            )
+            if uploaded is not None:
+                try:
+                    dest = services.save_upload(uploaded)
+                    st.success(f"✓ Saved: {dest.name} — reloading…")
+                    st.session_state["main_upload_nonce"] = nonce + 1
+                    st.rerun()
+                except DataLoadError as exc:
+                    st.error(exc.user_message)
+        else:
+            # Analysts: friendly waiting screen
+            user = auth.current_user(st.session_state)
+            st.markdown(
+                f'<div style="background:var(--card);border:1px solid var(--border);'
+                f'border-radius:14px;padding:40px 32px;text-align:center;">'
+                f'<div style="font-size:40px;margin-bottom:16px;">⏳</div>'
+                f'<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
+                f'Welcome, {user}</div>'
+                f'<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">'
+                f'No screening run is available yet.</div>'
+                f'<div style="font-size:12px;color:var(--muted);">'
+                f'Ask an owner to upload a screening file — it will appear here automatically.</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
     st.stop()
 
 
@@ -105,12 +118,10 @@ if df.empty:
 previous_df = _cached_previous(str(selected_path))
 metrics     = services.get_metrics(df, previous=previous_df)
 
-# ── Review Queue tab badge ────────────────────────────────────────────────────
-review_stats  = state.get_review_stats(st.session_state)
-pending       = (review_stats.get("Open", 0)
-                 + review_stats.get("In Review", 0)
-                 + review_stats.get("Escalated", 0))
-queue_label   = f"📋 Review Queue ({pending})" if pending else "📋 Review Queue"
+# ── Review Queue badge ────────────────────────────────────────────────────────
+review_stats = state.get_review_stats(st.session_state)
+pending      = sum(review_stats.get(s, 0) for s in ("Open", "In Review", "Escalated"))
+queue_label  = f"📋 Review Queue ({pending})" if pending else "📋 Review Queue"
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tabs = st.tabs(["📊 Overview", "🔎 Search & Filter", "📈 Insights", queue_label])
