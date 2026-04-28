@@ -8,31 +8,47 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from config import DATA_DIR
 from models import FilterState
 
 logger = logging.getLogger(__name__)
 
-_PERSIST_FILE: Path = DATA_DIR / ".screening_workspace.json"
+_PERSIST_FILE_NAME = ".screening_workspace.json"
+_persist_file: Path | None = None
 
-# Use only JSON-serializable types in defaults (no set)
+
+def _get_persist_file() -> Path | None:
+    global _persist_file
+    if _persist_file is not None:
+        return _persist_file
+    try:
+        from config import DATA_DIR
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _persist_file = DATA_DIR / _PERSIST_FILE_NAME
+        return _persist_file
+    except Exception as exc:
+        logger.warning("Persistence unavailable: %s", exc)
+        return None
+
+
 _DEFAULTS: dict[str, Any] = {
-    "theme": "dark",
-    "active_tab": "overview",
-    "selected_entity_id": None,
-    "filter_state": None,
-    "workflow_overrides": {},
-    "annotations": {},
-    "watchlist": [],          # stored as list, converted to set only when needed
-    "file_upload_nonce": 0,
+    "theme":               "dark",
+    "active_tab":          "overview",
+    "selected_entity_id":  None,
+    "filter_state":        None,
+    "workflow_overrides":  {},
+    "annotations":         {},
+    "watchlist":           [],
+    "file_upload_nonce":   0,
+    "current_user":        "",
 }
 
 
 # ── Disk helpers ──────────────────────────────────────────────────────────────
 def _load_persisted() -> dict:
     try:
-        if _PERSIST_FILE.exists():
-            return json.loads(_PERSIST_FILE.read_text(encoding="utf-8"))
+        pf = _get_persist_file()
+        if pf and pf.exists():
+            return json.loads(pf.read_text(encoding="utf-8"))
     except Exception as exc:
         logger.warning("Could not load workspace: %s", exc)
     return {}
@@ -40,7 +56,9 @@ def _load_persisted() -> dict:
 
 def _save_persisted(session) -> None:
     try:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        pf = _get_persist_file()
+        if pf is None:
+            return
         wl = session.get("watchlist", [])
         if isinstance(wl, set):
             wl = list(wl)
@@ -50,10 +68,7 @@ def _save_persisted(session) -> None:
             "watchlist":          wl,
             "theme":              session.get("theme", "dark"),
         }
-        _PERSIST_FILE.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        pf.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as exc:
         logger.warning("Could not save workspace: %s", exc)
 
@@ -66,23 +81,24 @@ def init_state(session) -> None:
     if session.get("filter_state") is None:
         session["filter_state"] = FilterState()
 
-    # Ensure watchlist is always a list (never a set in session)
     wl = session.get("watchlist", [])
     if isinstance(wl, set):
         session["watchlist"] = list(wl)
 
-    # Load persisted data once per browser session
     if not session.get("_workspace_loaded"):
-        persisted = _load_persisted()
-        if persisted.get("workflow_overrides"):
-            session["workflow_overrides"] = persisted["workflow_overrides"]
-        if persisted.get("annotations"):
-            session["annotations"] = persisted["annotations"]
-        if persisted.get("watchlist"):
-            wl = persisted["watchlist"]
-            session["watchlist"] = list(wl) if not isinstance(wl, list) else wl
-        if persisted.get("theme"):
-            session["theme"] = persisted["theme"]
+        try:
+            persisted = _load_persisted()
+            if persisted.get("workflow_overrides"):
+                session["workflow_overrides"] = persisted["workflow_overrides"]
+            if persisted.get("annotations"):
+                session["annotations"] = persisted["annotations"]
+            if persisted.get("watchlist"):
+                wl = persisted["watchlist"]
+                session["watchlist"] = list(wl) if not isinstance(wl, list) else wl
+            if persisted.get("theme"):
+                session["theme"] = persisted["theme"]
+        except Exception as exc:
+            logger.warning("Could not restore workspace: %s", exc)
         session["_workspace_loaded"] = True
 
 
@@ -140,7 +156,7 @@ def get_workflow(session, entity_id: str) -> str:
     return session.get("workflow_overrides", {}).get(entity_id, "Open")
 
 
-# ── Watchlist (stored as list, exposed as set for lookups) ───────────────────
+# ── Watchlist ─────────────────────────────────────────────────────────────────
 def toggle_watchlist(session, entity_id: str) -> bool:
     wl = list(session.get("watchlist", []))
     if entity_id in wl:
@@ -162,10 +178,16 @@ def get_watchlist(session) -> set:
     return set(session.get("watchlist", []))
 
 
-# ── Annotations ───────────────────────────────────────────────────────────────
+# ── Annotations — user-aware, persisted ──────────────────────────────────────
 def add_annotation(session, entity_id: str, text: str) -> None:
-    notes = dict(session.get("annotations", {}))
-    entry = {"text": text, "ts": datetime.now().strftime("%d %b %H:%M")}
+    """Add a timestamped, author-attributed annotation."""
+    author = session.get("current_user", "Unknown")
+    notes  = dict(session.get("annotations", {}))
+    entry  = {
+        "text":   text,
+        "ts":     datetime.now().strftime("%d %b %H:%M"),
+        "author": author,
+    }
     notes[entity_id] = [*notes.get(entity_id, []), entry]
     session["annotations"] = notes
     _save_persisted(session)
@@ -179,7 +201,7 @@ def get_all_annotations(session) -> dict:
     return dict(session.get("annotations", {}))
 
 
-# ── Legacy compatibility (used by original add_annotation calls) ──────────────
+# ── Review stats ──────────────────────────────────────────────────────────────
 def get_review_stats(session) -> dict[str, int]:
     overrides = session.get("workflow_overrides", {})
     counts: dict[str, int] = {"Open": 0, "In Review": 0, "Escalated": 0, "Cleared": 0}
