@@ -467,8 +467,10 @@ def _annotations(row: pd.Series, session) -> None:
     if notes:
         parts = []
         for entry in notes:
-            txt = escape(entry.get("text", "") if isinstance(entry, dict) else str(entry))
-            ts  = escape(entry.get("ts",   "") if isinstance(entry, dict) else "")
+            txt    = escape(entry.get("text",   "") if isinstance(entry, dict) else str(entry))
+            ts     = escape(entry.get("ts",     "") if isinstance(entry, dict) else "")
+            author = entry.get("author", "You")    if isinstance(entry, dict) else "You"
+            av_ltr = author[0].upper()             if author else "?"
             ts_html = (f'<span style="color:var(--muted);font-size:10px;'
                        f'font-family:\'IBM Plex Mono\',monospace;margin-left:6px;">{ts}</span>') if ts else ""
             parts.append(
@@ -478,9 +480,9 @@ def _annotations(row: pd.Series, session) -> None:
                 f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
                 f'<span style="width:22px;height:22px;border-radius:999px;'
                 f'background:var(--accent-s);display:inline-flex;align-items:center;'
-                f'justify-content:center;font-size:10px;font-weight:700;color:var(--accent);">Y</span>'
+                f'justify-content:center;font-size:10px;font-weight:700;color:var(--accent);">{av_ltr}</span>'
                 f'<span style="font-size:11px;font-weight:700;color:var(--dim);'
-                f'margin-left:8px;font-family:\'IBM Plex Mono\',monospace;">You</span>'
+                f'margin-left:8px;font-family:\'IBM Plex Mono\',monospace;">{escape(author)}</span>'
                 f'{ts_html}</div>'
                 f'<div style="font-size:12px;color:var(--text);line-height:1.55;'
                 f'padding-left:30px;">{txt}</div></div>'
