@@ -93,11 +93,13 @@ def _toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
     c1, c2, c3, c4, c5 = st.columns([3, 1.8, 1.8, 1.8, 0.9])
 
     with c1:
+        # nonce in key forces widget to remount (and clear) when Clear is pressed
+        input_nonce = session.get("filter_input_nonce", 0)
         typed = st.text_input(
             "Search", value=fs.query,
             placeholder="Search brand or service…",
             label_visibility="collapsed",
-            key="filter_text_input",
+            key=f"filter_text_input_{input_nonce}",
         )
         if typed and typed != fs.query:
             matches = [o for o in all_opts if typed.lower() in o.lower()][:8]
@@ -158,6 +160,7 @@ def _toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
             session["filter_state"] = FilterState()
             session["filter_action"] = ""
             session["filter_svc"]    = ""
+            session["filter_input_nonce"] = session.get("filter_input_nonce", 0) + 1
             st.rerun()
 
 
