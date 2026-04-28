@@ -25,12 +25,12 @@ st.set_page_config(
 
 state.init_state(st.session_state)
 
-# ── LOGIN GATE — must happen before anything else ─────────────────────────────
+# ── LOGIN GATE ────────────────────────────────────────────────────────────────
 if not auth.is_logged_in(st.session_state):
     auth.render_login(st.session_state)
     st.stop()
 
-# ── Inject theme after login (so dark mode applies immediately) ───────────────
+# ── Inject theme ──────────────────────────────────────────────────────────────
 inject_css(current_theme(st.session_state))
 
 
@@ -45,17 +45,18 @@ def _cached_previous(path_str):
     return services.load_previous_df(services.list_runs(), _P(path_str))
 
 
+# ── SIDEBAR (with sign out) ───────────────────────────────────────────────────
 selected_path = sidebar.render(st.session_state)
+
+# ── TOP BAR ───────────────────────────────────────────────────────────────────
 top_bar(run_label=now_label(), live=True)
 
 # ── No file loaded ────────────────────────────────────────────────────────────
 if selected_path is None:
     st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
     _, col, _ = st.columns([1, 2, 1])
-
     with col:
         if auth.is_owner(st.session_state):
-            # Owners: show upload card
             st.markdown(
                 '<div style="background:var(--card);border:1px solid var(--border);'
                 'border-radius:14px;padding:40px 32px;text-align:center;">'
@@ -68,7 +69,7 @@ if selected_path is None:
                 '</div></div>',
                 unsafe_allow_html=True,
             )
-            nonce    = st.session_state.get("main_upload_nonce", 0)
+            nonce = st.session_state.get("main_upload_nonce", 0)
             uploaded = st.file_uploader(
                 "Upload screening file", type=["xlsx"],
                 label_visibility="collapsed",
@@ -83,7 +84,6 @@ if selected_path is None:
                 except DataLoadError as exc:
                     st.error(exc.user_message)
         else:
-            # Analysts: friendly waiting screen
             user = auth.current_user(st.session_state)
             st.markdown(
                 f'<div style="background:var(--card);border:1px solid var(--border);'
@@ -91,15 +91,12 @@ if selected_path is None:
                 f'<div style="font-size:40px;margin-bottom:16px;">⏳</div>'
                 f'<div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">'
                 f'Welcome, {user}</div>'
-                f'<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">'
-                f'No screening run is available yet.</div>'
-                f'<div style="font-size:12px;color:var(--muted);">'
-                f'Ask an owner to upload a screening file — it will appear here automatically.</div>'
+                f'<div style="font-size:13px;color:var(--muted);">'
+                f'Ask an owner to upload a screening file.</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
     st.stop()
-
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 try:
@@ -118,7 +115,7 @@ if df.empty:
 previous_df = _cached_previous(str(selected_path))
 metrics     = services.get_metrics(df, previous=previous_df)
 
-# ── Review Queue badge ────────────────────────────────────────────────────────
+# ── Review Queue tab badge ────────────────────────────────────────────────────
 review_stats = state.get_review_stats(st.session_state)
 pending      = sum(review_stats.get(s, 0) for s in ("Open", "In Review", "Escalated"))
 queue_label  = f"📋 Review Queue ({pending})" if pending else "📋 Review Queue"
@@ -130,6 +127,7 @@ with tabs[1]: search.render(df, st.session_state)
 with tabs[2]: insights.render(df)
 with tabs[3]: review_queue.render(df, st.session_state)
 
+# ── Detail drawer ─────────────────────────────────────────────────────────────
 drawer.render(df, st.session_state)
 
 st.markdown(
