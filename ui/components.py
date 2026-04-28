@@ -1,163 +1,306 @@
+"""Reusable UI atoms — enriched with avatars, pills, meters."""
 from __future__ import annotations
+
+from datetime import datetime
+from html import escape
+
+import pandas as pd
 import streamlit as st
-from config import THEMES, Theme
+
+from config import Col, RISK_BY_LEVEL
+
+# ── Regulator color map ───────────────────────────────────────────────────────
+_REG_COLORS: dict[str, tuple[str, str]] = {
+    "CBUAE":  ("#3DA5E0", "rgba(61,165,224,0.15)"),
+    "VARA":   ("#C9A84C", "rgba(201,168,76,0.15)"),
+    "DFSA":   ("#A78BFA", "rgba(167,139,250,0.15)"),
+    "FSRA":   ("#34D399", "rgba(52,211,153,0.15)"),
+    "ADGM":   ("#34D399", "rgba(52,211,153,0.15)"),
+    "SCA":    ("#F87171", "rgba(248,113,113,0.15)"),
+    "GOV":    ("#6B7280", "rgba(107,114,128,0.15)"),
+}
+
+def _reg_color(reg: str) -> tuple[str, str]:
+    """Return (text_color, bg_color) for a regulator string."""
+    reg_upper = reg.upper()
+    for key, colors in _REG_COLORS.items():
+        if key in reg_upper:
+            return colors
+    return ("#9CA3AF", "rgba(156,163,175,0.12)")
 
 
-def current_theme(session) -> Theme:
-    return THEMES.get(session.get("theme", "dark"), THEMES["dark"])
+# ── Avatar ────────────────────────────────────────────────────────────────────
+def avatar_html(brand: str, reg: str, size: int = 36) -> str:
+    letter  = (brand.strip()[0].upper()) if brand.strip() else "?"
+    color, bg = _reg_color(reg)
+    return (
+        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
+        f'width:{size}px;height:{size}px;border-radius:999px;background:{bg};'
+        f'border:1.5px solid {color}40;font-size:{size//2-2}px;font-weight:800;'
+        f'color:{color};flex-shrink:0;font-family:\'IBM Plex Sans\',sans-serif;">'
+        f'{escape(letter)}</span>'
+    )
 
 
-def inject_css(theme: Theme) -> None:
-    is_dark = theme.name == "dark"
-    bg       = "#0F172A" if is_dark else "#F1F5F9"
-    card     = "#111827" if is_dark else "#FFFFFF"
-    card_h   = "#161E2E" if is_dark else "#F8FAFC"
-    border   = "#1F2937" if is_dark else "#E2E8F0"
-    border_l = "#2D3748" if is_dark else "#CBD5E1"
-    text     = "#E5E7EB" if is_dark else "#0F172A"
-    dim      = "#9CA3AF" if is_dark else "#374151"
-    muted    = "#6B7280" if is_dark else "#64748B"
-    shadow   = "rgba(0,0,0,0.25)" if is_dark else "rgba(0,0,0,0.08)"
+# ── Service pill ──────────────────────────────────────────────────────────────
+_SVC_COLORS: dict[str, tuple[str, str]] = {
+    "wallet":    ("#3DA5E0", "rgba(61,165,224,0.12)"),
+    "bnpl":      ("#F87171", "rgba(248,113,113,0.12)"),
+    "payment":   ("#C9A84C", "rgba(201,168,76,0.12)"),
+    "exchange":  ("#A78BFA", "rgba(167,139,250,0.12)"),
+    "va":        ("#A78BFA", "rgba(167,139,250,0.12)"),
+    "crypto":    ("#A78BFA", "rgba(167,139,250,0.12)"),
+    "remittance":("#34D399", "rgba(52,211,153,0.12)"),
+    "hawala":    ("#34D399", "rgba(52,211,153,0.12)"),
+    "finance":   ("#FBBF24", "rgba(251,191,36,0.12)"),
+    "gateway":   ("#6B7280", "rgba(107,114,128,0.12)"),
+}
 
-    st.markdown(f"""<style>
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+def service_pill_html(svc: str) -> str:
+    svc_lower = svc.lower()
+    color, bg = "#9CA3AF", "rgba(156,163,175,0.10)"
+    for key, (c, b) in _SVC_COLORS.items():
+        if key in svc_lower:
+            color, bg = c, b
+            break
+    short = svc[:30] + ("…" if len(svc) > 30 else "")
+    return (
+        f'<span style="display:inline-block;font-size:9px;font-weight:700;'
+        f'letter-spacing:0.06em;text-transform:uppercase;color:{color};'
+        f'background:{bg};border-radius:4px;padding:2px 7px;'
+        f'font-family:\'IBM Plex Mono\',monospace;white-space:nowrap;">'
+        f'{escape(short)}</span>'
+    )
 
-    :root{{
-        --bg:{bg}; --card:{card}; --card-h:{card_h};
-        --border:{border}; --border-l:{border_l};
-        --text:{text}; --dim:{dim}; --muted:{muted};
-        --accent:#C9A84C; --accent-s:rgba(201,168,76,0.10);
-        --shadow:{shadow}; --radius:12px; --radius-sm:8px;
-    }}
 
-    html,body,[data-testid="stAppViewContainer"]{{
-        background:var(--bg)!important;color:var(--text);
-        font-family:'IBM Plex Sans',sans-serif;
-    }}
-    [data-testid="stAppViewContainer"]>.main{{background:var(--bg)!important;}}
-    .block-container{{padding-top:1rem!important;padding-bottom:2rem!important;max-width:1400px!important;}}
+# ── Classification badge ──────────────────────────────────────────────────────
+_CLF_RULES = [
+    ("unlicensed", "POSSIBLE UNLICENSED", "#EF4444", "rgba(239,68,68,0.12)"),
+    ("critical",   "CRITICAL",            "#EF4444", "rgba(239,68,68,0.12)"),
+    ("not found",  "NOT FOUND",           "#F87171", "rgba(248,113,113,0.10)"),
+    ("likely licensed", "LIKELY LICENSED","#34D399", "rgba(52,211,153,0.10)"),
+    ("licensed",   "LICENSED",            "#34D399", "rgba(52,211,153,0.10)"),
+    ("government", "GOVERNMENT",          "#3DA5E0", "rgba(61,165,224,0.10)"),
+    ("verification","NEEDS VERIFICATION", "#FBBF24", "rgba(251,191,36,0.10)"),
+    ("needs",      "NEEDS REVIEW",        "#FBBF24", "rgba(251,191,36,0.10)"),
+]
 
-    /* SIDEBAR — let Streamlit control collapse, just style it */
-    [data-testid="stSidebar"]>div:first-child{{
-        background:var(--card)!important;
-        border-right:1px solid var(--border);
-    }}
-    [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] span,
-    [data-testid="stSidebar"] label{{color:var(--dim)!important;}}
-    [data-testid="stSidebar"] .stSelectbox>div>div{{
-        background:var(--bg)!important;border-color:var(--border)!important;color:var(--text)!important;
-    }}
+def classification_badge_html(clf: str) -> str:
+    clf_lower = clf.lower()
+    # Strip emoji prefixes
+    import re
+    clean = re.sub(r'^[\U0001F300-\U0001FFFE\U00002702-\U000027B0\s🔴🟡🟠🟢✅⚠]+', '', clf).strip()
+    color, bg, label = "#9CA3AF", "rgba(156,163,175,0.10)", clean[:35]
+    for key, lbl, c, b in _CLF_RULES:
+        if key in clf_lower:
+            color, bg, label = c, b, lbl
+            break
+    return (
+        f'<span style="display:inline-block;font-size:9px;font-weight:700;'
+        f'letter-spacing:0.06em;text-transform:uppercase;color:{color};'
+        f'background:{bg};border:1px solid {color}30;border-radius:4px;'
+        f'padding:2px 8px;font-family:\'IBM Plex Mono\',monospace;white-space:nowrap;">'
+        f'{escape(label)}</span>'
+    )
 
-    /* TOPBAR */
-    .uae-topbar{{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);margin-bottom:16px;position:relative;overflow:hidden;}}
-    .uae-topbar::before{{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#C9A84C,#3DA5E0,#34D399);}}
-    .uae-topbar h1{{font-size:16px;font-weight:700;color:var(--text);margin:0;letter-spacing:0.02em;}}
-    .uae-topbar .sub{{font-size:10px;color:var(--muted);letter-spacing:0.12em;text-transform:uppercase;margin-top:2px;font-family:'IBM Plex Mono',monospace;}}
 
-    /* LIVE */
-    .uae-live{{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);color:#34D399;font-size:10px;font-weight:700;letter-spacing:0.1em;font-family:'IBM Plex Mono',monospace;}}
-    .uae-live-dot{{width:6px;height:6px;border-radius:999px;background:#34D399;box-shadow:0 0 0 3px rgba(52,211,153,0.2);animation:pulsedot 2s infinite;}}
-    @keyframes pulsedot{{0%,100%{{box-shadow:0 0 0 3px rgba(52,211,153,0.2);}}50%{{box-shadow:0 0 0 7px rgba(52,211,153,0.04);}}}}
+# ── Priority dot meter ────────────────────────────────────────────────────────
+def priority_dots_html(level: int, max_dots: int = 3) -> str:
+    tier   = RISK_BY_LEVEL.get(int(level), RISK_BY_LEVEL[1])
+    filled = min(int(level), max_dots)
+    dots   = ""
+    for i in range(max_dots):
+        c = tier.color if i < filled else "rgba(128,128,128,0.2)"
+        dots += f'<span style="color:{c};font-size:10px;">●</span>'
+    return f'<span title="Risk level {level}" style="letter-spacing:2px;">{dots}</span>'
 
-    /* CARDS */
-    .uae-card{{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 4px var(--shadow);transition:border-color 0.2s,background 0.2s,transform 0.15s,box-shadow 0.2s;}}
-    .uae-card:hover{{border-color:var(--border-l);background:var(--card-h);transform:translateY(-2px);box-shadow:0 6px 24px var(--shadow);}}
-    .uae-card.subtle{{padding:14px 16px;}}
-    .uae-card.nohover:hover{{border-color:var(--border);background:var(--card);transform:none;box-shadow:0 1px 4px var(--shadow);}}
 
-    /* KPI */
-    .uae-kpi-label{{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;font-family:'IBM Plex Mono',monospace;}}
-    .uae-kpi-value{{color:var(--text);font-size:30px;font-weight:700;line-height:1;margin-top:6px;font-family:'IBM Plex Mono',monospace;letter-spacing:-0.02em;}}
-    .uae-kpi-hint{{color:var(--muted);font-size:10px;margin-top:6px;font-family:'IBM Plex Mono',monospace;}}
+# ── Confidence meter ──────────────────────────────────────────────────────────
+_CONF_MAP = {
+    "high":   (3, "#34D399", "3 signals confirmed — source URL + license check + register match"),
+    "medium": (2, "#FBBF24", "2 signals confirmed — partial evidence, needs manual review"),
+    "low":    (1, "#EF4444", "1 signal only — limited evidence, treat with caution"),
+}
 
-    /* BADGE */
-    .uae-badge{{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid transparent;letter-spacing:0.06em;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}}
+def confidence_meter_html(conf: str) -> str:
+    key        = conf.lower().strip()
+    dots, color, tip = _CONF_MAP.get(key, (1, "#6B7280", "Unknown confidence level"))
+    filled_dots = "".join(
+        f'<span style="color:{"" if i < dots else "rgba(128,128,128,0.2)"};color:{color if i < dots else "rgba(128,128,128,0.2)"};">●</span>'
+        for i in range(3)
+    )
+    return (
+        f'<span title="{escape(tip)}" style="letter-spacing:2px;cursor:help;">'
+        f'{filled_dots}</span>'
+        f'<span style="font-size:9px;color:var(--muted);margin-left:4px;'
+        f'font-family:\'IBM Plex Mono\',monospace;">{escape(conf)}</span>'
+    )
 
-    /* SECTION HEADER */
-    .uae-sec-title{{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:0.12em;text-transform:uppercase;font-family:'IBM Plex Mono',monospace;margin-bottom:2px;}}
-    .uae-sec-sub{{font-size:11px;color:var(--muted);margin-bottom:12px;}}
 
-    /* ENTITY CARD */
-    .uae-entity-card{{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px;box-shadow:0 1px 4px var(--shadow);transition:border-color 0.2s,transform 0.15s,box-shadow 0.2s;}}
-    .uae-entity-card:hover{{border-color:var(--border-l);transform:translateY(-2px);box-shadow:0 8px 28px var(--shadow);}}
+# ── Regulator badge ───────────────────────────────────────────────────────────
+def regulator_badge_html(reg: str) -> str:
+    color, bg = _reg_color(reg)
+    short = reg.split("_")[0] if "_" in reg else reg
+    return (
+        f'<span style="display:inline-block;font-size:9px;font-weight:700;'
+        f'letter-spacing:0.06em;color:{color};background:{bg};'
+        f'border-radius:4px;padding:2px 7px;font-family:\'IBM Plex Mono\',monospace;">'
+        f'{escape(short)}</span>'
+    )
 
-    /* SUMMARY */
-    .uae-sum-row{{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);}}
-    .uae-sum-row:last-child{{border-bottom:none;}}
-    .uae-sum-label{{color:var(--muted);font-size:11px;font-family:'IBM Plex Mono',monospace;}}
-    .uae-sum-value{{color:var(--text);font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;}}
 
-    /* RISK BAR */
-    .uae-bar-row{{display:flex;align-items:center;gap:10px;margin:5px 0;}}
-    .uae-bar-label{{width:80px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);font-family:'IBM Plex Mono',monospace;text-align:right;}}
-    .uae-bar-track{{flex:1;height:6px;border-radius:999px;background:rgba(128,128,128,0.12);overflow:hidden;}}
-    .uae-bar-fill{{height:100%;border-radius:999px;}}
-    .uae-bar-count{{width:28px;text-align:right;font-size:11px;font-weight:700;color:var(--text);font-family:'IBM Plex Mono',monospace;}}
+# ── Action icon map ───────────────────────────────────────────────────────────
+_ACTION_ICONS = {
+    "investigate": "🔍",
+    "review":      "📋",
+    "monitor":     "👁",
+    "no action":   "✓",
+    "escalate":    "⚑",
+}
 
-    /* EMPTY */
-    .uae-empty{{text-align:center;padding:40px 20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);}}
-    .uae-empty-icon{{font-size:28px;margin-bottom:10px;}}
-    .uae-empty-title{{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;}}
-    .uae-empty-desc{{font-size:12px;color:var(--muted);}}
+def action_icon(action: str) -> str:
+    a = action.lower()
+    for key, icon in _ACTION_ICONS.items():
+        if key in a:
+            return icon
+    return "›"
 
-    /* ACTION LABEL */
-    .uae-action-lbl{{display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--accent);background:var(--accent-s);border-radius:4px;padding:2px 7px;font-family:'IBM Plex Mono',monospace;}}
 
-    /* BUTTONS */
-    .stButton>button{{border-radius:var(--radius-sm)!important;border:1px solid var(--border)!important;background:var(--card)!important;color:var(--dim)!important;font-weight:600!important;font-size:12px!important;font-family:'IBM Plex Sans',sans-serif!important;transition:all 0.15s!important;}}
-    .stButton>button:hover{{border-color:var(--border-l)!important;color:var(--text)!important;background:var(--card-h)!important;}}
+# ── Top bar ───────────────────────────────────────────────────────────────────
+def top_bar(run_label: str, live: bool = True) -> None:
+    badge = ('<span class="uae-live"><span class="uae-live-dot"></span>LIVE</span>'
+             if live else "")
+    bar_col, btn_col = st.columns([7, 1])
+    with bar_col:
+        st.markdown(
+            f'<div class="uae-topbar">'
+            f'<div><h1>🛡️ UAE Regulatory Screening</h1>'
+            f'<div class="sub">Internal Risk Monitoring &nbsp;·&nbsp; {escape(run_label)}</div></div>'
+            f'<div>{badge}</div></div>',
+            unsafe_allow_html=True,
+        )
+    with btn_col:
+        is_dark = st.session_state.get("theme", "dark") == "dark"
+        st.markdown('<div style="margin-top:14px;"></div>', unsafe_allow_html=True)
+        if st.button("☀ Light" if is_dark else "☾ Dark",
+                     key="topbar_theme_toggle", use_container_width=True):
+            import state as _state
+            _state.toggle_theme(st.session_state)
+            st.rerun()
 
-    /* TABS */
-    [data-testid="stTabs"] [data-baseweb="tab-list"]{{background:transparent!important;border-bottom:1px solid var(--border)!important;gap:0!important;padding:0!important;margin-bottom:20px!important;}}
-    [data-testid="stTabs"] [data-baseweb="tab"]{{background:transparent!important;border:none!important;border-bottom:2px solid transparent!important;color:var(--muted)!important;font-weight:600!important;font-size:11px!important;letter-spacing:0.1em!important;text-transform:uppercase!important;padding:10px 20px!important;font-family:'IBM Plex Mono',monospace!important;transition:color 0.15s!important;}}
-    [data-testid="stTabs"] [aria-selected="true"]{{color:var(--accent)!important;border-bottom-color:var(--accent)!important;}}
-    [data-testid="stTabs"] [data-baseweb="tab-highlight"]{{display:none!important;}}
 
-    /* INPUTS */
-    [data-testid="stTextInput"] input{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;color:var(--text)!important;font-family:'IBM Plex Sans',sans-serif!important;font-size:13px!important;}}
-    [data-testid="stTextInput"] input::placeholder{{color:var(--muted)!important;}}
-    [data-testid="stTextInput"] input:focus{{border-color:var(--accent)!important;box-shadow:0 0 0 2px rgba(201,168,76,0.15)!important;outline:none!important;}}
-    [data-testid="stSelectbox"]>div>div{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;color:var(--text)!important;}}
-    [data-testid="stMultiSelect"]>div{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius-sm)!important;}}
-    [data-testid="stMultiSelect"] span[data-baseweb="tag"]{{background:var(--accent-s)!important;border-color:var(--accent)!important;color:var(--accent)!important;}}
+# ── KPI card ──────────────────────────────────────────────────────────────────
+def kpi_card(label: str, value: str | int, hint: str = "",
+             accent: str = "var(--accent)") -> None:
+    st.markdown(
+        f'<div class="uae-card subtle nohover" style="border-top:2px solid {accent};cursor:default;">'
+        f'<div class="uae-kpi-label">{escape(label)}</div>'
+        f'<div class="uae-kpi-value">{escape(str(value))}</div>'
+        f'<div class="uae-kpi-hint">{escape(hint)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
-    /* DATAFRAME */
-    [data-testid="stDataFrame"]{{border:1px solid var(--border)!important;border-radius:var(--radius)!important;overflow:hidden!important;background:var(--card)!important;}}
 
-    /* METRICS */
-    [data-testid="stMetric"]{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius)!important;padding:12px 16px!important;}}
-    [data-testid="stMetricLabel"]{{color:var(--muted)!important;font-size:10px!important;font-weight:700!important;letter-spacing:0.08em!important;text-transform:uppercase!important;font-family:'IBM Plex Mono',monospace!important;}}
-    [data-testid="stMetricValue"]{{color:var(--text)!important;font-size:22px!important;font-family:'IBM Plex Mono',monospace!important;}}
+# ── Risk badge ────────────────────────────────────────────────────────────────
+def risk_badge_html(level: int) -> str:
+    tier = RISK_BY_LEVEL.get(int(level), RISK_BY_LEVEL[1])
+    return (
+        f'<span class="uae-badge" style="background:{tier.accent_bg};'
+        f'color:{tier.color};border-color:{tier.color}33;">'
+        f'{escape(tier.label)}</span>'
+    )
 
-    /* EXPANDER */
-    [data-testid="stExpander"]{{background:var(--card)!important;border:1px solid var(--border)!important;border-radius:var(--radius)!important;}}
-    [data-testid="stExpander"] summary{{font-size:13px!important;font-weight:600!important;color:var(--text)!important;font-family:'IBM Plex Sans',sans-serif!important;padding:14px 16px!important;}}
-    [data-testid="stExpander"] summary:hover{{background:var(--card-h)!important;}}
-    details[open] summary{{border-bottom:1px solid var(--border)!important;}}
 
-    /* ALERTS */
-    [data-testid="stSuccess"]{{background:rgba(5,150,105,0.08)!important;border:1px solid rgba(5,150,105,0.25)!important;border-radius:var(--radius-sm)!important;color:#34D399!important;font-size:12px!important;}}
-    [data-testid="stInfo"]{{background:rgba(37,99,235,0.08)!important;border:1px solid rgba(37,99,235,0.2)!important;border-radius:var(--radius-sm)!important;color:var(--dim)!important;font-size:12px!important;}}
-    [data-testid="stWarning"]{{background:rgba(245,158,11,0.08)!important;border:1px solid rgba(245,158,11,0.25)!important;border-radius:var(--radius-sm)!important;color:#FBBF24!important;font-size:12px!important;}}
+def risk_badge(level: int) -> None:
+    st.markdown(risk_badge_html(level), unsafe_allow_html=True)
 
-    /* DOWNLOAD */
-    [data-testid="stDownloadButton"]>button{{border-radius:var(--radius-sm)!important;border:1px solid var(--border)!important;background:var(--card)!important;color:var(--dim)!important;font-weight:600!important;font-size:12px!important;}}
-    [data-testid="stDownloadButton"]>button:hover{{border-color:var(--accent)!important;color:var(--accent)!important;}}
 
-    /* RADIO */
-    [data-testid="stRadio"] label{{color:var(--dim)!important;font-size:12px!important;}}
+# ── Empty / error ─────────────────────────────────────────────────────────────
+def empty_state(title: str, desc: str = "", icon: str = "📭") -> None:
+    st.markdown(
+        f'<div class="uae-empty"><div class="uae-empty-icon">{icon}</div>'
+        f'<div class="uae-empty-title">{escape(title)}</div>'
+        f'<div class="uae-empty-desc">{escape(desc)}</div></div>',
+        unsafe_allow_html=True,
+    )
 
-    /* FILE UPLOADER */
-    [data-testid="stFileUploader"]>div{{background:var(--card)!important;border:1px dashed var(--border)!important;border-radius:var(--radius-sm)!important;}}
 
-    /* MISC */
-    hr{{border-color:var(--border)!important;margin:12px 0!important;}}
-    footer,header{{visibility:hidden!important;}}
-    #MainMenu{{visibility:hidden!important;}}
-    [data-testid="stDeployButton"]{{display:none!important;}}
-    .stCaption,[data-testid="stCaptionContainer"]{{color:var(--muted)!important;font-size:11px!important;font-family:'IBM Plex Mono',monospace!important;}}
-    ::-webkit-scrollbar{{width:5px;height:5px;}}
-    ::-webkit-scrollbar-track{{background:var(--bg);}}
-    ::-webkit-scrollbar-thumb{{background:var(--border-l);border-radius:3px;}}
-    </style>""", unsafe_allow_html=True)
+def error_state(title: str, detail: str = "") -> None:
+    st.markdown(
+        f'<div class="uae-card nohover" style="border-color:rgba(239,68,68,0.35);'
+        f'border-left:3px solid #EF4444;">'
+        f'<div style="color:#EF4444;font-weight:700;font-size:13px;">⚠ {escape(title)}</div>'
+        f'<div style="color:var(--muted);font-size:12px;margin-top:6px;">{escape(detail)}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ── Entity card (overview priority queue) ─────────────────────────────────────
+def entity_card(row: pd.Series, on_open_key: str) -> None:
+    brand     = str(row.get(Col.BRAND,     "—") or "—")
+    service   = str(row.get(Col.SERVICE,   "—") or "—")
+    regulator = str(row.get(Col.REGULATOR, "—") or "—")
+    level     = int(row.get(Col.RISK_LEVEL, 1))
+    rationale = str(row.get(Col.RATIONALE, "") or "")[:180]
+    action    = str(row.get(Col.ACTION,    "") or "")
+    conf      = str(row.get(Col.CONFIDENCE,"") or "")
+
+    icon_html = f'<span style="margin-right:6px;">{action_icon(action)}</span>' if action else ""
+    act_html  = (
+        f'<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">'
+        f'<span class="uae-action-lbl">{icon_html}{escape(action)}</span>'
+        f'</div>'
+    ) if action else ""
+    rat_html = (
+        f'<div style="font-size:11px;color:var(--muted);margin-top:10px;'
+        f'border-top:1px solid var(--border);padding-top:8px;line-height:1.55;">'
+        f'{escape(rationale)}{"…" if len(str(row.get(Col.RATIONALE,""))) > 180 else ""}</div>'
+    ) if rationale else ""
+
+    st.markdown(
+        f'<div class="uae-entity-card">'
+        # Header row: avatar + name + dots + badge
+        f'<div style="display:flex;align-items:flex-start;gap:10px;">'
+        f'{avatar_html(brand, regulator, 36)}'
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+        f'<span style="font-size:14px;font-weight:700;color:var(--text);">{escape(brand)}</span>'
+        f'{priority_dots_html(level)}'
+        f'</div>'
+        # Service pill + regulator badge
+        f'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap;">'
+        f'{service_pill_html(service)}'
+        f'{regulator_badge_html(regulator)}'
+        f'</div>'
+        # Confidence
+        + (f'<div style="margin-top:4px;">{confidence_meter_html(conf)}</div>' if conf else "")
+        + f'{act_html}</div>'
+        f'<div style="flex-shrink:0;">{risk_badge_html(level)}</div>'
+        f'</div>'
+        f'{rat_html}</div>',
+        unsafe_allow_html=True,
+    )
+    st.button("Open Details →", key=on_open_key, use_container_width=True)
+
+
+# ── Section header ────────────────────────────────────────────────────────────
+def section_header(title: str, subtitle: str = "") -> None:
+    sub = f'<div class="uae-sec-sub">{escape(subtitle)}</div>' if subtitle else ""
+    st.markdown(
+        f'<div style="margin:4px 0 12px 0;">'
+        f'<div class="uae-sec-title">{escape(title)}</div>{sub}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def divider() -> None:
+    st.markdown(
+        '<div style="height:1px;background:var(--border);margin:12px 0;"></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def now_label() -> str:
+    return datetime.now().strftime("%d %b %Y, %H:%M")
