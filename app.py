@@ -20,7 +20,7 @@ st.set_page_config(
     page_title="UAE Regulatory Screening",
     page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 state.init_state(st.session_state)
