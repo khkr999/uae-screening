@@ -48,6 +48,13 @@ def _cached_previous(path_str):
 # ── SIDEBAR (with sign out) ───────────────────────────────────────────────────
 selected_path = sidebar.render(st.session_state)
 
+# Sign out always renders — independent of sidebar.py auth calls
+with st.sidebar:
+    st.markdown('---')
+    if st.button('⏻  Sign out', use_container_width=True, key='app_signout'):
+        st.session_state['current_user'] = ''
+        st.rerun()
+
 # ── TOP BAR ───────────────────────────────────────────────────────────────────
 top_bar(run_label=now_label(), live=True)
 
