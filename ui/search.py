@@ -10,10 +10,39 @@ from config import Col, HIGH_RISK_THRESHOLD
 import services
 import state
 from models import FilterState
-from ui.components import (
-    risk_pill_html, regulator_pill_html, action_label,
-    empty_state, section_header,
-)
+from ui.components import empty_state, section_header
+
+# ── Inline helpers (no dependency on components version) ─────────────────────
+def _risk_pill(level: int) -> str:
+    classes = {0:"licensed",1:"low",2:"monitor",3:"medium",4:"high",5:"critical"}
+    labels  = {0:"Licensed",1:"Low",2:"Monitor",3:"Medium",4:"High",5:"Critical"}
+    cls = classes.get(int(level), "low")
+    lbl = labels.get(int(level), "Low")
+    return (f'<span style="display:inline-flex;align-items:center;gap:4px;'
+            f'font-size:10px;font-weight:700;padding:4px 10px;border-radius:999px;'
+            f'font-family:\'IBM Plex Mono\',monospace;letter-spacing:0.06em;'
+            f'background:var(--{cls}-bg,rgba(128,128,128,0.1));'
+            f'color:var(--{cls},#9CA3AF);border:1px solid currentColor30;">'
+            f'● {lbl.upper()}</span>')
+
+def _reg_pill(reg: str) -> str:
+    reg_str = str(reg or "").strip()
+    reg_low = reg_str.lower()
+    color = "#E5B547" if "cbuae" in reg_low else             "#A78BFA" if "vara" in reg_low else             "#F59E0B" if "adgm" in reg_low else             "#22C55E" if "fsra" in reg_low else "#9CA3AF"
+    short = reg_str.split("_")[0].upper()[:8] if reg_str else "N/A"
+    return (f'<span style="font-size:10px;font-weight:700;padding:3px 8px;'
+            f'border-radius:6px;font-family:\'IBM Plex Mono\',monospace;'
+            f'background:{color}18;color:{color};border:1px solid {color}44;">'
+            f'{short}</span>')
+
+def _action_lbl(action: str) -> str:
+    a = str(action or "").lower()
+    if "investigate" in a: return "Immediate due diligence required"
+    if "review this month" in a: return "Annual compliance review"
+    if "review" in a: return "Compliance review"
+    if "monitor" in a: return "Routine monitoring"
+    if "no action" in a: return "No action needed"
+    return str(action)[:40] if action else "—" 
 
 
 # Regulator filter chips (matching mockup: ADGM / CBUAE / FSRA / VARA)
@@ -223,13 +252,13 @@ def _render_table_row(row: pd.Series, session, idx: int) -> None:
         f'<div class="uae-table-cell-svc">{escape(service[:35])}</div>'
         f'</div>'
         # Regulator pill
-        f'<div>{regulator_pill_html(regulator)}</div>'
+        f'<div>{_reg_pill(regulator)}</div>'
         # Risk pill
-        f'<div>{risk_pill_html(level)}</div>'
+        f'<div>{_risk_pill(level)}</div>'
         # Alert
         f'<div>{alert_html}</div>'
         # Required action
-        f'<div class="uae-table-action">{escape(action_label(action))}</div>'
+        f'<div class="uae-table-action">{escape(_action_lbl(action))}</div>'
         # Status
         f'<div class="uae-table-status" style="text-align:right;">{escape(status)}</div>'
         f'</div>'
