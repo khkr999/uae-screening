@@ -25,6 +25,12 @@ st.set_page_config(
 
 state.init_state(st.session_state)
 
+# ── SIGN OUT (hardcoded, no dependencies) ────────────────────────────────────
+with st.sidebar:
+    if st.button("⏻ Sign out", key="signout_top"):
+        st.session_state["current_user"] = ""
+        st.rerun()
+
 # ── LOGIN GATE ────────────────────────────────────────────────────────────────
 if not auth.is_logged_in(st.session_state):
     auth.render_login(st.session_state)
