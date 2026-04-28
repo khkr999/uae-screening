@@ -30,6 +30,16 @@ def risk_pill_html(level: int) -> str:
     )
 
 
+# ── Compatibility aliases for older modules ──────────────────────────────────
+# review_queue.py and insights.py still import these names
+risk_badge_html = risk_pill_html
+
+
+def risk_badge(level: int) -> None:
+    """Legacy helper — renders the risk pill via st.markdown."""
+    st.markdown(risk_pill_html(level), unsafe_allow_html=True)
+
+
 # ── Regulator colors ─────────────────────────────────────────────────────────
 _REG_CLASSES = {
     "cbuae":      "cbuae",
