@@ -50,10 +50,6 @@ def render(session) -> Path | None:
             unsafe_allow_html=True,
         )
 
-        # Sign out button
-        if st.button("Sign out", use_container_width=True, key="sidebar_signout"):
-            session["current_user"] = ""
-            st.rerun()
 
         _div()
 
@@ -62,6 +58,10 @@ def render(session) -> Path | None:
         if st.button("☀  Light Mode" if is_dark else "☾  Dark Mode",
                      use_container_width=True, key="sidebar_theme_toggle"):
             state.toggle_theme(session)
+            st.rerun()
+
+        if st.button("⏻  Sign out", use_container_width=True, key="sidebar_signout"):
+            session["current_user"] = ""
             st.rerun()
 
         _div()
