@@ -1,19 +1,20 @@
-"""Sidebar: run selection, upload, theme toggle."""
+"""Sidebar: run selection, upload (owners only), theme toggle, user identity."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import streamlit as st
 
-from config import DATA_DIR
 from exceptions import DataLoadError
 import services
 import state
+import auth
 from ui.components import empty_state
 
 
 def render(session) -> Path | None:
     with st.sidebar:
+        # ── Brand ──────────────────────────────────────────────────────────────
         st.markdown(
             '<div style="padding:8px 0 16px 0;">'
             '<div style="font-size:15px;font-weight:700;color:var(--text);">'
@@ -25,7 +26,38 @@ def render(session) -> Path | None:
         )
         _div()
 
-        # Theme toggle — also in sidebar for when it's open
+        # ── Logged-in user ─────────────────────────────────────────────────────
+        user    = auth.current_user(session)
+        is_own  = auth.is_owner(session)
+        role_lbl = "Owner" if is_own else "Analyst"
+        role_col = "#C9A84C" if is_own else "#3DA5E0"
+
+        # Avatar + name + role
+        avatar_letter = user[0].upper() if user else "?"
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:10px;'
+            f'padding:10px 12px;background:var(--card);border:1px solid var(--border);'
+            f'border-radius:10px;margin-bottom:4px;">'
+            f'<span style="width:32px;height:32px;border-radius:999px;'
+            f'background:rgba(201,168,76,0.15);border:1.5px solid #C9A84C40;'
+            f'display:inline-flex;align-items:center;justify-content:center;'
+            f'font-size:14px;font-weight:800;color:#C9A84C;">{avatar_letter}</span>'
+            f'<div>'
+            f'<div style="font-size:13px;font-weight:700;color:var(--text);">{user}</div>'
+            f'<div style="font-size:10px;font-weight:600;color:{role_col};'
+            f'font-family:\'IBM Plex Mono\',monospace;">{role_lbl}</div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        # Sign out button
+        if st.button("Sign out", use_container_width=True, key="sidebar_signout"):
+            session["current_user"] = ""
+            st.rerun()
+
+        _div()
+
+        # ── Theme toggle ───────────────────────────────────────────────────────
         is_dark = session.get("theme", "dark") == "dark"
         if st.button("☀  Light Mode" if is_dark else "☾  Dark Mode",
                      use_container_width=True, key="sidebar_theme_toggle"):
@@ -34,6 +66,7 @@ def render(session) -> Path | None:
 
         _div()
 
+        # ── Screening run selector ─────────────────────────────────────────────
         st.markdown(
             '<div style="font-size:10px;font-weight:700;color:var(--muted);'
             'letter-spacing:0.1em;text-transform:uppercase;'
@@ -53,29 +86,45 @@ def render(session) -> Path | None:
             )
             selected_path = options[choice]
         else:
-            empty_state("No screening files",
-                        "Upload a UAE_Screening_*.xlsx to begin.")
+            if is_own:
+                empty_state("No screening files",
+                            "Upload a UAE_Screening_*.xlsx below.")
+            else:
+                empty_state("No screening files",
+                            "Ask an owner to upload a screening run.")
 
         _div()
 
-        st.markdown(
-            '<div style="font-size:10px;font-weight:700;color:var(--muted);'
-            'letter-spacing:0.1em;text-transform:uppercase;'
-            'font-family:\'IBM Plex Mono\',monospace;margin-bottom:8px;">Upload Run</div>',
-            unsafe_allow_html=True,
-        )
-        _upload(session)
+        # ── Upload — OWNERS ONLY ───────────────────────────────────────────────
+        if is_own:
+            st.markdown(
+                '<div style="font-size:10px;font-weight:700;color:var(--muted);'
+                'letter-spacing:0.1em;text-transform:uppercase;'
+                'font-family:\'IBM Plex Mono\',monospace;margin-bottom:8px;">Upload Run</div>',
+                unsafe_allow_html=True,
+            )
+            _upload(session)
+            _div()
+        else:
+            # Non-owners see a friendly message instead
+            st.markdown(
+                '<div style="font-size:11px;color:var(--muted);padding:6px 0;">'
+                '📁 File uploads are restricted to owners.</div>',
+                unsafe_allow_html=True,
+            )
+            _div()
 
-        _div()
-
+        # ── Footer ─────────────────────────────────────────────────────────────
         runs_count = len(runs) if runs else 0
         st.markdown(
             f'<div style="font-size:10px;color:var(--muted);'
             f'font-family:\'IBM Plex Mono\',monospace;line-height:1.8;">'
             f'<div>Runs archived: <span style="color:var(--dim);font-weight:600;">'
             f'{runs_count}</span></div>'
-            f'<div style="margin-top:4px;word-break:break-all;font-size:9px;">{DATA_DIR}</div>'
-            f'<div style="margin-top:8px;">Internal tool · not a legal determination.</div>'
+            # Only show data path to owners
+            + (f'<div style="margin-top:4px;word-break:break-all;font-size:9px;">'
+               f'</div>' if not is_own else '')
+            + f'<div style="margin-top:8px;">Internal tool · not a legal determination.</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
