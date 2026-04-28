@@ -60,9 +60,6 @@ def render(session) -> Path | None:
             state.toggle_theme(session)
             st.rerun()
 
-        if st.button("⏻  Sign out", use_container_width=True, key="sidebar_signout"):
-            session["current_user"] = ""
-            st.rerun()
 
         _div()
 
