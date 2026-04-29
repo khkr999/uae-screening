@@ -22,8 +22,7 @@ def render(df: pd.DataFrame, metrics: RunMetrics, session) -> None:
     with left:
         _render_priority_queue(df, session)
     with right:
-        _render_summary(metrics, df)
-        st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="margin-top:-24px;"></div>', unsafe_allow_html=True)
         _render_risk_distribution(df)
 
 
@@ -32,10 +31,11 @@ def _render_kpis(df: pd.DataFrame, m: RunMetrics) -> None:
     """Count KPIs directly from data — not just risk level mapping."""
     total = len(df)
 
-    # Licensed = Risk Level 0 (authoritative — do NOT use str.contains("LICENSED")
-    # as it falsely matches "UNLICENSED" and "NOT FOUND – POSSIBLE UNLICENSED")
-    rl  = df[Col.RISK_LEVEL].fillna(99).astype(int) if Col.RISK_LEVEL in df.columns else pd.Series([99] * total)
-    licensed_mask   = (rl == 0)
+    # Licensed = Risk Level 0 OR classification contains LICENSED
+    clf = df[Col.CLASSIFICATION].fillna("").astype(str) if Col.CLASSIFICATION in df.columns else pd.Series([""] * total)
+    rl  = df[Col.RISK_LEVEL].fillna(99).astype(int)     if Col.RISK_LEVEL    in df.columns else pd.Series([99]  * total)
+
+    licensed_mask   = (rl == 0) | clf.str.contains("LICENSED", case=False, na=False)
     high_risk_mask  = rl >= HIGH_RISK_THRESHOLD
     review_mask     = rl.between(REVIEW_MIN, REVIEW_MAX - 1)  # level 2 only (monitor)
 
@@ -102,13 +102,21 @@ def _render_summary(m: RunMetrics, df: pd.DataFrame) -> None:
 def _render_risk_distribution(df: pd.DataFrame) -> None:
     section_header("Risk Distribution")
 
-    # Build counts directly from Risk Level — the single source of truth
+    # Build counts directly so Licensed (0) is always correct
     rl = df[Col.RISK_LEVEL].fillna(99).astype(int) if Col.RISK_LEVEL in df.columns else pd.Series(dtype=int)
 
     rows = []
     for tier in sorted(RISK_BY_LEVEL.values(), key=lambda t: t.level, reverse=True):
         count = int((rl == tier.level).sum())
         rows.append({"label": tier.label, "count": count, "color": tier.color})
+
+    # Add "Licensed" row explicitly using classification if risk level 0 count is off
+    clf = df[Col.CLASSIFICATION].fillna("").astype(str) if Col.CLASSIFICATION in df.columns else pd.Series([""] * len(df))
+    licensed_by_clf = int(clf.str.contains("LICENSED", case=False, na=False).sum())
+    # Use the higher of the two counts for the Licensed row
+    for r in rows:
+        if r["label"] == "Licensed / Clear":
+            r["count"] = max(r["count"], licensed_by_clf)
 
     max_count = max((r["count"] for r in rows), default=1)
     bars = []
