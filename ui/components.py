@@ -1,311 +1,133 @@
-"""Reusable UI atoms — enriched with avatars, pills, meters."""
+"""Overview tab — KPIs + priority queue + run summary."""
 from __future__ import annotations
 
-from datetime import datetime
 from html import escape
 
 import pandas as pd
 import streamlit as st
 
-from config import Col, RISK_BY_LEVEL
-
-# ── Regulator color map ───────────────────────────────────────────────────────
-_REG_COLORS: dict[str, tuple[str, str]] = {
-    "CBUAE":  ("#3DA5E0", "rgba(61,165,224,0.15)"),
-    "VARA":   ("#C9A84C", "rgba(201,168,76,0.15)"),
-    "DFSA":   ("#A78BFA", "rgba(167,139,250,0.15)"),
-    "FSRA":   ("#34D399", "rgba(52,211,153,0.15)"),
-    "ADGM":   ("#34D399", "rgba(52,211,153,0.15)"),
-    "SCA":    ("#F87171", "rgba(248,113,113,0.15)"),
-    "GOV":    ("#6B7280", "rgba(107,114,128,0.15)"),
-}
-
-def _reg_color(reg: str) -> tuple[str, str]:
-    """Return (text_color, bg_color) for a regulator string."""
-    reg_upper = reg.upper()
-    for key, colors in _REG_COLORS.items():
-        if key in reg_upper:
-            return colors
-    return ("#9CA3AF", "rgba(156,163,175,0.12)")
+from config import Col, HIGH_RISK_THRESHOLD, REVIEW_MIN, REVIEW_MAX, RISK_BY_LEVEL
+import services
+import state
+from models import RunMetrics
+from ui.components import (
+    empty_state, entity_card, kpi_card, section_header,
+)
 
 
-# ── Avatar ────────────────────────────────────────────────────────────────────
-def avatar_html(brand: str, reg: str, size: int = 36) -> str:
-    letter  = (brand.strip()[0].upper()) if brand.strip() else "?"
-    color, bg = _reg_color(reg)
-    return (
-        f'<span style="display:inline-flex;align-items:center;justify-content:center;'
-        f'width:{size}px;height:{size}px;border-radius:999px;background:{bg};'
-        f'border:1.5px solid {color}40;font-size:{size//2-2}px;font-weight:800;'
-        f'color:{color};flex-shrink:0;font-family:\'IBM Plex Sans\',sans-serif;">'
-        f'{escape(letter)}</span>'
+def render(df: pd.DataFrame, metrics: RunMetrics, session) -> None:
+    _render_kpis(df, metrics)
+    st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
+    left, right = st.columns([2, 1], gap="large")
+    with left:
+        _render_priority_queue(df, session)
+    with right:
+        _render_summary(metrics, df)
+        st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+        _render_risk_distribution(df)
+
+
+# ── KPI CARDS ─────────────────────────────────────────────────────────────────
+def _render_kpis(df: pd.DataFrame, m: RunMetrics) -> None:
+    """Count KPIs directly from data — not just risk level mapping."""
+    total = len(df)
+
+    # Licensed = Risk Level 0 (authoritative — do NOT use str.contains("LICENSED")
+    # as it falsely matches "UNLICENSED" and "NOT FOUND – POSSIBLE UNLICENSED")
+    rl  = df[Col.RISK_LEVEL].fillna(99).astype(int) if Col.RISK_LEVEL in df.columns else pd.Series([99] * total)
+    licensed_mask   = (rl == 0)
+    high_risk_mask  = rl >= HIGH_RISK_THRESHOLD
+    review_mask     = rl.between(REVIEW_MIN, REVIEW_MAX - 1)  # level 2 only (monitor)
+
+    licensed_count  = int(licensed_mask.sum())
+    high_risk_count = int(high_risk_mask.sum())
+    review_count    = int(review_mask.sum())
+
+    share = f"{round((high_risk_count / max(total, 1)) * 100)}% of total"
+    hint  = f"+{m.risk_increased} risk up" if m.risk_increased else "Surfaced this run"
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        kpi_card("Entities Screened",   f"{total:,}",        "This run",            accent="#3DA5E0")
+    with c2:
+        kpi_card("Critical / High",     high_risk_count,     share,                 accent="#EF4444")
+    with c3:
+        kpi_card("Needs Review",        review_count,        "Risk level 2",        accent="#FBBF24")
+    with c4:
+        kpi_card("Licensed / Clear",    licensed_count,      "On official register", accent="#059669")
+    with c5:
+        kpi_card("New Alerts",          m.new_entities,      hint,                  accent="#C9A84C")
+
+
+# ── PRIORITY QUEUE ────────────────────────────────────────────────────────────
+def _render_priority_queue(df: pd.DataFrame, session) -> None:
+    section_header("Priority Review Queue", "Top entities by risk — focus here first")
+    priority = services.get_insights(df)["priority"]
+
+    if priority.empty:
+        empty_state("No high-risk entities this run",
+                    "All clear — keep monitoring weekly.", icon="✅")
+        return
+
+    cols = st.columns(2, gap="medium")
+    for idx, (_, row) in enumerate(priority.iterrows()):
+        with cols[idx % 2]:
+            key = f"open_priority_{row.get('id', idx)}"
+            entity_card(row, on_open_key=key)
+            if st.session_state.get(key):
+                state.set_selected(session, str(row.get("id", "")))
+
+
+# ── RUN SUMMARY ───────────────────────────────────────────────────────────────
+def _render_summary(m: RunMetrics, df: pd.DataFrame) -> None:
+    section_header("Run Summary")
+    rows = [
+        ("Top regulator",   m.top_regulator),
+        ("Top service",     m.top_service),
+        ("Total entities",  f"{m.total:,}"),
+        ("Distinct brands", f"{df[Col.BRAND].nunique():,}"),
+    ]
+    rows_html = "".join(
+        f'<div class="uae-sum-row">'
+        f'<span class="uae-sum-label">{label}</span>'
+        f'<span class="uae-sum-value">{escape(str(value))}</span>'
+        f'</div>'
+        for label, value in rows
     )
+    st.markdown(f'<div class="uae-card nohover">{rows_html}</div>',
+                unsafe_allow_html=True)
 
 
-# ── Service pill ──────────────────────────────────────────────────────────────
-_SVC_COLORS: dict[str, tuple[str, str]] = {
-    "wallet":    ("#3DA5E0", "rgba(61,165,224,0.12)"),
-    "bnpl":      ("#F87171", "rgba(248,113,113,0.12)"),
-    "payment":   ("#C9A84C", "rgba(201,168,76,0.12)"),
-    "exchange":  ("#A78BFA", "rgba(167,139,250,0.12)"),
-    "va":        ("#A78BFA", "rgba(167,139,250,0.12)"),
-    "crypto":    ("#A78BFA", "rgba(167,139,250,0.12)"),
-    "remittance":("#34D399", "rgba(52,211,153,0.12)"),
-    "hawala":    ("#34D399", "rgba(52,211,153,0.12)"),
-    "finance":   ("#FBBF24", "rgba(251,191,36,0.12)"),
-    "gateway":   ("#6B7280", "rgba(107,114,128,0.12)"),
-}
+# ── RISK DISTRIBUTION ─────────────────────────────────────────────────────────
+def _render_risk_distribution(df: pd.DataFrame) -> None:
+    section_header("Risk Distribution")
 
-def service_pill_html(svc: str) -> str:
-    svc_lower = svc.lower()
-    color, bg = "#9CA3AF", "rgba(156,163,175,0.10)"
-    for key, (c, b) in _SVC_COLORS.items():
-        if key in svc_lower:
-            color, bg = c, b
-            break
-    short = svc[:30] + ("…" if len(svc) > 30 else "")
-    return (
-        f'<span style="display:inline-block;font-size:9px;font-weight:700;'
-        f'letter-spacing:0.06em;text-transform:uppercase;color:{color};'
-        f'background:{bg};border-radius:4px;padding:2px 7px;'
-        f'font-family:\'IBM Plex Mono\',monospace;white-space:nowrap;">'
-        f'{escape(short)}</span>'
-    )
+    # Build counts directly from Risk Level — the single source of truth
+    rl = df[Col.RISK_LEVEL].fillna(99).astype(int) if Col.RISK_LEVEL in df.columns else pd.Series(dtype=int)
 
+    rows = []
+    for tier in sorted(RISK_BY_LEVEL.values(), key=lambda t: t.level, reverse=True):
+        count = int((rl == tier.level).sum())
+        rows.append({"label": tier.label, "count": count, "color": tier.color})
 
-# ── Classification badge ──────────────────────────────────────────────────────
-_CLF_RULES = [
-    ("unlicensed", "POSSIBLE UNLICENSED", "#EF4444", "rgba(239,68,68,0.12)"),
-    ("critical",   "CRITICAL",            "#EF4444", "rgba(239,68,68,0.12)"),
-    ("not found",  "NOT FOUND",           "#F87171", "rgba(248,113,113,0.10)"),
-    ("likely licensed", "LIKELY LICENSED","#34D399", "rgba(52,211,153,0.10)"),
-    ("licensed",   "LICENSED",            "#34D399", "rgba(52,211,153,0.10)"),
-    ("government", "GOVERNMENT",          "#3DA5E0", "rgba(61,165,224,0.10)"),
-    ("verification","NEEDS VERIFICATION", "#FBBF24", "rgba(251,191,36,0.10)"),
-    ("needs",      "NEEDS REVIEW",        "#FBBF24", "rgba(251,191,36,0.10)"),
-]
-
-def classification_badge_html(clf: str) -> str:
-    clf_lower = clf.lower()
-    # Strip emoji prefixes
-    import re
-    clean = re.sub(r'^[\U0001F300-\U0001FFFE\U00002702-\U000027B0\s🔴🟡🟠🟢✅⚠]+', '', clf).strip()
-    color, bg, label = "#9CA3AF", "rgba(156,163,175,0.10)", clean[:35]
-    for key, lbl, c, b in _CLF_RULES:
-        if key in clf_lower:
-            color, bg, label = c, b, lbl
-            break
-    return (
-        f'<span style="display:inline-block;font-size:9px;font-weight:700;'
-        f'letter-spacing:0.06em;text-transform:uppercase;color:{color};'
-        f'background:{bg};border:1px solid {color}30;border-radius:4px;'
-        f'padding:2px 8px;font-family:\'IBM Plex Mono\',monospace;white-space:nowrap;">'
-        f'{escape(label)}</span>'
-    )
-
-
-# ── Priority dot meter ────────────────────────────────────────────────────────
-def priority_dots_html(level: int, max_dots: int = 3) -> str:
-    tier   = RISK_BY_LEVEL.get(int(level), RISK_BY_LEVEL[1])
-    filled = min(int(level), max_dots)
-    dots   = ""
-    for i in range(max_dots):
-        c = tier.color if i < filled else "rgba(128,128,128,0.2)"
-        dots += f'<span style="color:{c};font-size:10px;">●</span>'
-    return f'<span title="Risk level {level}" style="letter-spacing:2px;">{dots}</span>'
-
-
-# ── Confidence meter ──────────────────────────────────────────────────────────
-_CONF_MAP = {
-    "high":   (3, "#34D399", "3 signals confirmed — source URL + license check + register match"),
-    "medium": (2, "#FBBF24", "2 signals confirmed — partial evidence, needs manual review"),
-    "low":    (1, "#EF4444", "1 signal only — limited evidence, treat with caution"),
-}
-
-def confidence_meter_html(conf: str) -> str:
-    key        = conf.lower().strip()
-    dots, color, tip = _CONF_MAP.get(key, (1, "#6B7280", "Unknown confidence level"))
-    filled_dots = "".join(
-        f'<span style="color:{"" if i < dots else "rgba(128,128,128,0.2)"};color:{color if i < dots else "rgba(128,128,128,0.2)"};">●</span>'
-        for i in range(3)
-    )
-    return (
-        f'<span title="{escape(tip)}" style="letter-spacing:2px;cursor:help;">'
-        f'{filled_dots}</span>'
-        f'<span style="font-size:9px;color:var(--muted);margin-left:4px;'
-        f'font-family:\'IBM Plex Mono\',monospace;">{escape(conf)}</span>'
-    )
-
-
-# ── Regulator badge ───────────────────────────────────────────────────────────
-def regulator_badge_html(reg: str) -> str:
-    color, bg = _reg_color(reg)
-    short = reg.split("_")[0] if "_" in reg else reg
-    return (
-        f'<span style="display:inline-block;font-size:9px;font-weight:700;'
-        f'letter-spacing:0.06em;color:{color};background:{bg};'
-        f'border-radius:4px;padding:2px 7px;font-family:\'IBM Plex Mono\',monospace;">'
-        f'{escape(short)}</span>'
-    )
-
-
-# ── Action icon map ───────────────────────────────────────────────────────────
-_ACTION_ICONS = {
-    "investigate": "🔍",
-    "review":      "📋",
-    "monitor":     "👁",
-    "no action":   "✓",
-    "escalate":    "⚑",
-}
-
-def action_icon(action: str) -> str:
-    a = action.lower()
-    for key, icon in _ACTION_ICONS.items():
-        if key in a:
-            return icon
-    return "›"
-
-
-# ── Top bar ───────────────────────────────────────────────────────────────────
-def top_bar(run_label: str, live: bool = True) -> None:
-    badge = ('<span class="uae-live"><span class="uae-live-dot"></span>LIVE</span>'
-             if live else "")
-    bar_col, btn_col = st.columns([7, 1])
-    with bar_col:
-        st.markdown(
-            f'<div class="uae-topbar">'
-            f'<div><h1>🛡️ UAE Regulatory Screening</h1>'
-            f'<div class="sub">Internal Risk Monitoring &nbsp;·&nbsp; {escape(run_label)}</div></div>'
-            f'<div>{badge}</div></div>',
-            unsafe_allow_html=True,
+    max_count = max((r["count"] for r in rows), default=1)
+    bars = []
+    for r in rows:
+        if r["count"] == 0:
+            continue  # skip empty tiers for cleanliness
+        width = (r["count"] / max_count) * 100
+        short = r["label"].split("/")[0].strip()
+        bars.append(
+            f'<div class="uae-bar-row">'
+            f'<span class="uae-bar-label">{escape(short)}</span>'
+            f'<div class="uae-bar-track">'
+            f'<div class="uae-bar-fill" style="width:{width:.1f}%;background:{r["color"]};"></div>'
+            f'</div>'
+            f'<span class="uae-bar-count">{r["count"]}</span>'
+            f'</div>'
         )
-    with btn_col:
-        is_dark = st.session_state.get("theme", "dark") == "dark"
-        st.markdown('<div style="margin-top:14px;"></div>', unsafe_allow_html=True)
-        if st.button("☀ Light" if is_dark else "☾ Dark",
-                     key="topbar_theme_toggle", use_container_width=True):
-            import state as _state
-            _state.toggle_theme(st.session_state)
-            st.rerun()
-        if st.button("⎋ Sign Out", key="topbar_signout", use_container_width=True):
-            import auth as _auth
-            import state as _state
-            _auth.sign_out(st.session_state)
-            st.rerun()
-
-
-# ── KPI card ──────────────────────────────────────────────────────────────────
-def kpi_card(label: str, value: str | int, hint: str = "",
-             accent: str = "var(--accent)") -> None:
-    st.markdown(
-        f'<div class="uae-card subtle nohover" style="border-top:2px solid {accent};cursor:default;">'
-        f'<div class="uae-kpi-label">{escape(label)}</div>'
-        f'<div class="uae-kpi-value">{escape(str(value))}</div>'
-        f'<div class="uae-kpi-hint">{escape(hint)}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-
-# ── Risk badge ────────────────────────────────────────────────────────────────
-def risk_badge_html(level: int) -> str:
-    tier = RISK_BY_LEVEL.get(int(level), RISK_BY_LEVEL[1])
-    return (
-        f'<span class="uae-badge" style="background:{tier.accent_bg};'
-        f'color:{tier.color};border-color:{tier.color}33;">'
-        f'{escape(tier.label)}</span>'
-    )
-
-
-def risk_badge(level: int) -> None:
-    st.markdown(risk_badge_html(level), unsafe_allow_html=True)
-
-
-# ── Empty / error ─────────────────────────────────────────────────────────────
-def empty_state(title: str, desc: str = "", icon: str = "📭") -> None:
-    st.markdown(
-        f'<div class="uae-empty"><div class="uae-empty-icon">{icon}</div>'
-        f'<div class="uae-empty-title">{escape(title)}</div>'
-        f'<div class="uae-empty-desc">{escape(desc)}</div></div>',
-        unsafe_allow_html=True,
-    )
-
-
-def error_state(title: str, detail: str = "") -> None:
-    st.markdown(
-        f'<div class="uae-card nohover" style="border-color:rgba(239,68,68,0.35);'
-        f'border-left:3px solid #EF4444;">'
-        f'<div style="color:#EF4444;font-weight:700;font-size:13px;">⚠ {escape(title)}</div>'
-        f'<div style="color:var(--muted);font-size:12px;margin-top:6px;">{escape(detail)}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-
-# ── Entity card (overview priority queue) ─────────────────────────────────────
-def entity_card(row: pd.Series, on_open_key: str) -> None:
-    brand     = str(row.get(Col.BRAND,     "—") or "—")
-    service   = str(row.get(Col.SERVICE,   "—") or "—")
-    regulator = str(row.get(Col.REGULATOR, "—") or "—")
-    level     = int(row.get(Col.RISK_LEVEL, 1))
-    rationale = str(row.get(Col.RATIONALE, "") or "")[:180]
-    action    = str(row.get(Col.ACTION,    "") or "")
-    conf      = str(row.get(Col.CONFIDENCE,"") or "")
-
-    icon_html = f'<span style="margin-right:6px;">{action_icon(action)}</span>' if action else ""
-    act_html  = (
-        f'<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">'
-        f'<span class="uae-action-lbl">{icon_html}{escape(action)}</span>'
-        f'</div>'
-    ) if action else ""
-    rat_html = (
-        f'<div style="font-size:11px;color:var(--muted);margin-top:10px;'
-        f'border-top:1px solid var(--border);padding-top:8px;line-height:1.55;">'
-        f'{escape(rationale)}{"…" if len(str(row.get(Col.RATIONALE,""))) > 180 else ""}</div>'
-    ) if rationale else ""
 
     st.markdown(
-        f'<div class="uae-entity-card">'
-        # Header row: avatar + name + dots + badge
-        f'<div style="display:flex;align-items:flex-start;gap:10px;">'
-        f'{avatar_html(brand, regulator, 36)}'
-        f'<div style="flex:1;min-width:0;">'
-        f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
-        f'<span style="font-size:14px;font-weight:700;color:var(--text);">{escape(brand)}</span>'
-        f'{priority_dots_html(level)}'
-        f'</div>'
-        # Service pill + regulator badge
-        f'<div style="display:flex;align-items:center;gap:6px;margin-top:5px;flex-wrap:wrap;">'
-        f'{service_pill_html(service)}'
-        f'{regulator_badge_html(regulator)}'
-        f'</div>'
-        # Confidence
-        + (f'<div style="margin-top:4px;">{confidence_meter_html(conf)}</div>' if conf else "")
-        + f'{act_html}</div>'
-        f'<div style="flex-shrink:0;">{risk_badge_html(level)}</div>'
-        f'</div>'
-        f'{rat_html}</div>',
+        f'<div class="uae-card nohover">{"".join(bars)}</div>',
         unsafe_allow_html=True,
     )
-    st.button("Open Details →", key=on_open_key, use_container_width=True)
-
-
-# ── Section header ────────────────────────────────────────────────────────────
-def section_header(title: str, subtitle: str = "") -> None:
-    sub = f'<div class="uae-sec-sub">{escape(subtitle)}</div>' if subtitle else ""
-    st.markdown(
-        f'<div style="margin:4px 0 12px 0;">'
-        f'<div class="uae-sec-title">{escape(title)}</div>{sub}</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def divider() -> None:
-    st.markdown(
-        '<div style="height:1px;background:var(--border);margin:12px 0;"></div>',
-        unsafe_allow_html=True,
-    )
-
-
-def now_label() -> str:
-    return datetime.now().strftime("%d %b %Y, %H:%M")
