@@ -21,6 +21,28 @@ def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
 
+def _persist_login(session) -> None:
+    """Write login credentials to the workspace file so they survive a refresh."""
+    try:
+        from state import _get_persist_file, _load_persisted
+        import json
+        pf = _get_persist_file()
+        if pf is None:
+            return
+        # Merge into existing persisted data (don't overwrite other keys)
+        data = {}
+        if pf.exists():
+            try:
+                data = json.loads(pf.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        data["current_user"] = session.get("current_user", "")
+        data["is_owner"]     = bool(session.get("is_owner", False))
+        pf.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def is_owner(session) -> bool:
     return bool(session.get("is_owner", False))
 
@@ -31,6 +53,24 @@ def current_user(session) -> str:
 
 def is_logged_in(session) -> bool:
     return bool(session.get("current_user", "").strip())
+
+
+def sign_out(session) -> None:
+    """Clear login from session and wipe persisted credentials."""
+    session["current_user"] = ""
+    session["is_owner"] = False
+    # Remove persisted login so refresh doesn't auto-login after sign-out
+    try:
+        from state import _get_persist_file, _load_persisted
+        import json
+        pf = _get_persist_file()
+        if pf and pf.exists():
+            data = json.loads(pf.read_text(encoding="utf-8"))
+            data.pop("current_user", None)
+            data.pop("is_owner", None)
+            pf.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def render_login(session) -> None:
@@ -113,6 +153,7 @@ def render_login(session) -> None:
             if _hash(password) == _OWNER_CREDENTIALS[name_clean]:
                 session["current_user"] = name_stripped
                 session["is_owner"]     = True
+                _persist_login(session)
                 st.rerun()
             else:
                 st.error("Incorrect password. Try again, or enter without password for view-only access.")
@@ -121,6 +162,7 @@ def render_login(session) -> None:
             # Analyst — name only, view-only access
             session["current_user"] = name_stripped
             session["is_owner"]     = False
+            _persist_login(session)
             st.rerun()
 
     st.markdown(
