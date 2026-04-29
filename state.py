@@ -67,6 +67,8 @@ def _save_persisted(session) -> None:
             "annotations":        dict(session.get("annotations", {})),
             "watchlist":          wl,
             "theme":              session.get("theme", "dark"),
+            "current_user":       session.get("current_user", ""),
+            "is_owner":           bool(session.get("is_owner", False)),
         }
         pf.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as exc:
@@ -97,6 +99,10 @@ def init_state(session) -> None:
                 session["watchlist"] = list(wl) if not isinstance(wl, list) else wl
             if persisted.get("theme"):
                 session["theme"] = persisted["theme"]
+            if persisted.get("current_user"):
+                session["current_user"] = persisted["current_user"]
+            if "is_owner" in persisted:
+                session["is_owner"] = persisted["is_owner"]
         except Exception as exc:
             logger.warning("Could not restore workspace: %s", exc)
         session["_workspace_loaded"] = True
