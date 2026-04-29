@@ -240,17 +240,22 @@ def _stats_bar(fs: FilterState, total: int, filtered: pd.DataFrame) -> None:
 
 # ── TABLE ─────────────────────────────────────────────────────────────────────
 def _render_table(df: pd.DataFrame, session) -> None:
-    # Column header row
-    hdr_cols = st.columns([0.35, 2.2, 1.0, 0.9, 0.85, 1.8, 0.75])
-    for col, h in zip(hdr_cols,
-                      ["", "Brand / Service", "Regulator", "Risk", "Confidence", "Classification", ""]):
-        col.markdown(
-            f'<div style="padding:0 4px 8px 4px;font-size:9px;font-weight:700;'
-            f'letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);'
-            f'border-bottom:2px solid var(--border);'
-            f'font-family:\'IBM Plex Mono\',monospace;">{h}</div>',
-            unsafe_allow_html=True,
-        )
+    # Single full-width header — one continuous underline, clean sans-serif font
+    headers = ["Brand / Service", "Regulator", "Risk", "Confidence", "Classification"]
+    header_cells = "".join(
+        f'<span style="font-size:9px;font-weight:600;letter-spacing:0.10em;'
+        f'text-transform:uppercase;color:var(--muted);'
+        f'font-family:\'IBM Plex Sans\',sans-serif;">{h}</span>'
+        for h in headers
+    )
+    st.markdown(
+        f'<div style="display:grid;'
+        f'grid-template-columns:44px 2.2fr 1fr 0.9fr 0.85fr 1.8fr 90px;'
+        f'padding:0 4px 9px 4px;'
+        f'border-bottom:1px solid var(--border);margin-bottom:4px;">'
+        f'<span></span>{header_cells}<span></span></div>',
+        unsafe_allow_html=True,
+    )
 
     for i, (_, row) in enumerate(df.iterrows()):
         level = int(row.get(Col.RISK_LEVEL, 1)) if Col.RISK_LEVEL in df.columns else 1
