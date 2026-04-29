@@ -187,6 +187,11 @@ def top_bar(run_label: str, live: bool = True) -> None:
             import state as _state
             _state.toggle_theme(st.session_state)
             st.rerun()
+        if st.button("⎋ Sign Out", key="topbar_signout", use_container_width=True):
+            import auth as _auth
+            import state as _state
+            _auth.sign_out(st.session_state)
+            st.rerun()
 
 
 # ── KPI card ──────────────────────────────────────────────────────────────────
