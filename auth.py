@@ -1,80 +1,63 @@
 """Authentication — owner requires name + password, analysts name only."""
 from __future__ import annotations
-
 import hashlib
 import streamlit as st
 
-# ── Owner credentials ─────────────────────────────────────────────────────────
-# Keys are lowercase names, values are SHA-256 hashes of the password.
-# To generate a hash for a new password, run in Python:
-#   import hashlib; print(hashlib.sha256("yourpassword".encode()).hexdigest())
-#
-# Current owner password: change "uae2024secure" to whatever you want,
-# then replace the hash below.
 _OWNER_CREDENTIALS: dict[str, str] = {
     "khalil":  hashlib.sha256("uae2024secure".encode()).hexdigest(),
     "khkr999": hashlib.sha256("uae2024secure".encode()).hexdigest(),
 }
 
-
 def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-
 def _persist_login(session) -> None:
-    """Write login credentials to the workspace file so they survive a refresh."""
+    """Write login to Supabase sessions table so refresh keeps user logged in."""
     try:
-        from state import _get_persist_file, _load_persisted
-        import json
-        pf = _get_persist_file()
-        if pf is None:
+        from db import get_client
+        db = get_client()
+        if db is None:
             return
-        # Merge into existing persisted data (don't overwrite other keys)
-        data = {}
-        if pf.exists():
-            try:
-                data = json.loads(pf.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        data["current_user"] = session.get("current_user", "")
-        data["is_owner"]     = bool(session.get("is_owner", False))
-        pf.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        db.table("sessions").upsert({
+            "username":  session.get("current_user", ""),
+            "is_owner":  bool(session.get("is_owner", False)),
+            "last_seen": __import__("datetime").datetime.utcnow().isoformat(),
+        }).execute()
     except Exception:
         pass
 
+def sign_out(session) -> None:
+    """Clear login from session and from Supabase sessions table."""
+    username = session.get("current_user", "")
+    session["current_user"] = ""
+    session["is_owner"] = False
+    session["_workspace_loaded"] = False
+    if username:
+        try:
+            from db import get_client
+            db = get_client()
+            if db:
+                db.table("sessions").delete().eq("username", username).execute()
+        except Exception:
+            pass
 
 def is_owner(session) -> bool:
     return bool(session.get("is_owner", False))
 
-
 def current_user(session) -> str:
     return session.get("current_user", "")
-
 
 def is_logged_in(session) -> bool:
     return bool(session.get("current_user", "").strip())
 
-
-def sign_out(session) -> None:
-    """Clear login from session and wipe persisted credentials."""
-    session["current_user"] = ""
-    session["is_owner"] = False
-    # Remove persisted login so refresh doesn't auto-login after sign-out
-    try:
-        from state import _get_persist_file, _load_persisted
-        import json
-        pf = _get_persist_file()
-        if pf and pf.exists():
-            data = json.loads(pf.read_text(encoding="utf-8"))
-            data.pop("current_user", None)
-            data.pop("is_owner", None)
-            pf.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
+def _try_restore_from_supabase(session) -> bool:
+    """
+    Streamlit has no native session cookies, so we can't know WHICH user
+    is refreshing. Login always requires name entry — this is intentional.
+    """
+    return False
 
 def render_login(session) -> None:
-    """Full-screen login. Owners enter name + password. Analysts name only."""
     st.markdown("""
         <style>
         html,body,[data-testid="stAppViewContainer"]{background:#0F172A!important;}
@@ -109,13 +92,10 @@ def render_login(session) -> None:
     )
 
     name = st.text_input(
-        "Your name",
-        placeholder="Enter your name…",
-        label_visibility="collapsed",
-        key="login_name",
+        "Your name", placeholder="Enter your name…",
+        label_visibility="collapsed", key="login_name",
     )
 
-    # Show password field only if the typed name matches a known owner
     name_clean  = name.strip().lower()
     is_an_owner = name_clean in _OWNER_CREDENTIALS
     password    = ""
@@ -128,11 +108,8 @@ def render_login(session) -> None:
             unsafe_allow_html=True,
         )
         password = st.text_input(
-            "Password",
-            type="password",
-            placeholder="Owner password…",
-            label_visibility="collapsed",
-            key="login_password",
+            "Password", type="password", placeholder="Owner password…",
+            label_visibility="collapsed", key="login_password",
         )
 
     col1, col2 = st.columns([3, 1])
@@ -144,9 +121,7 @@ def render_login(session) -> None:
         if len(name_stripped) < 2:
             st.error("Please enter at least 2 characters.")
             return
-
         if is_an_owner:
-            # Owner must provide correct password
             if not password:
                 st.error("Password required for owner access.")
                 return
@@ -159,7 +134,6 @@ def render_login(session) -> None:
                 st.error("Incorrect password. Try again, or enter without password for view-only access.")
                 return
         else:
-            # Analyst — name only, view-only access
             session["current_user"] = name_stripped
             session["is_owner"]     = False
             _persist_login(session)
