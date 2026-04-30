@@ -10,6 +10,7 @@ from config import Col, HIGH_RISK_THRESHOLD, REVIEW_MIN, REVIEW_MAX, RISK_BY_LEV
 import services
 import state
 from models import RunMetrics
+import ui.drawer as _drawer
 from ui.components import (
     empty_state, entity_card, kpi_card, section_header,
 )
@@ -22,9 +23,14 @@ def render(df: pd.DataFrame, metrics: RunMetrics, session) -> None:
     with left:
         _render_priority_queue(df, session)
     with right:
-        _render_summary(metrics, df)
-        st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
-        _render_risk_distribution(df)
+        # Show entity drawer in right column when selected,
+        # otherwise show Run Summary + Risk Distribution
+        if state.get_selected(session):
+            _drawer.render(df, session, inline=True)
+        else:
+            _render_summary(metrics, df)
+            st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+            _render_risk_distribution(df)
 
 
 # ── KPI CARDS ─────────────────────────────────────────────────────────────────
@@ -77,7 +83,6 @@ def _render_priority_queue(df: pd.DataFrame, session) -> None:
             entity_card(row, on_open_key=key)
             if st.session_state.get(key):
                 state.set_selected(session, str(row.get("id", "")))
-                session["_scroll_to_drawer"] = True
                 st.rerun()
 
 
