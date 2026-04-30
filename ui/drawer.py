@@ -54,8 +54,7 @@ def render(df: pd.DataFrame, session) -> None:
         return
     row = hits.iloc[0]
 
-    # Refresh workflow + annotations from Supabase each time drawer opens
-    state.get_review_stats(session)  # refreshes workflow_overrides in session
+    # Read from local session cache — instant, no Supabase call
     session[f"_prefetched_notes_{eid}"] = state.get_annotations(session, eid)
 
     with st.expander(f"📋  {row.get(Col.BRAND, '—')}  ·  Entity Details", expanded=True):
