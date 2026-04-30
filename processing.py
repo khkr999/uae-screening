@@ -87,7 +87,7 @@ _QUICK_CHIP_FILTERS = {
                                   .str.contains(r"crypto|virtual asset|token|stable",
                                                 case=False, regex=True),
     "uaePresent":   lambda df: df[Col.UAE_PRESENT] == True,  # noqa: E712
-    "unlicensed":   lambda df: df[Col.UNLICENSED_SIGNAL] == True,  # noqa: E712
+    "unlicensed":   lambda df: (df[Col.UNLICENSED_SIGNAL] == True) & (df[Col.LICENSE_SIGNAL] != True),  # noqa: E712 — exclude entities that are also confirmed licensed
 }
 
 
