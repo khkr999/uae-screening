@@ -38,7 +38,11 @@ def init_state(session) -> None:
     if isinstance(wl, set):
         session["watchlist"] = list(wl)
     if not session.get("_workspace_loaded"):
+        # Preserve UI-only state that must survive the Supabase pull
+        _selected = session.get("selected_entity_id")
         _pull_shared_state(session)
+        if _selected:
+            session["selected_entity_id"] = _selected
         session["_workspace_loaded"] = True
 
 def _pull_shared_state(session) -> None:
