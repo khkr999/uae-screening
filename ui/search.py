@@ -72,7 +72,6 @@ def render(df: pd.DataFrame, session) -> None:
 
     _toolbar(session, fs, options, df)
     _chips_row(session, fs, df)
-    _svc_chips(session, df)
 
     # Get full filtered set (all pages) for accurate totals
     all_filtered = _apply_svc_filter(apply_filters(df, fs), session)
@@ -104,7 +103,7 @@ def _toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
     services_ = sorted(df[Col.SERVICE].dropna().astype(str).unique().tolist()) if Col.SERVICE in df.columns else []
     all_opts  = brands + [s for s in services_ if s not in brands]
 
-    c1, c2, c3, c4 = st.columns([3, 1.8, 1.8, 0.9])
+    c1, c2, c3, c4, c5 = st.columns([3, 1.6, 1.6, 1.6, 0.8])
 
     with c1:
         nonce = session.get("filter_input_nonce", 0)
@@ -149,6 +148,21 @@ def _toolbar(session, fs: FilterState, options: dict, df: pd.DataFrame) -> None:
             st.rerun()
 
     with c4:
+        svc_opts = list(_SVC_GROUPS.keys())
+        active_svc = session.get("filter_svc", "")
+        svc_sel = st.selectbox(
+            "Service Type",
+            options=[""] + svc_opts,
+            index=([""] + svc_opts).index(active_svc) if active_svc in svc_opts else 0,
+            format_func=lambda x: "All service types" if x == "" else x,
+            label_visibility="collapsed",
+            key="filter_svc_select",
+        )
+        if svc_sel != active_svc:
+            session["filter_svc"] = svc_sel
+            st.rerun()
+
+    with c5:
         st.markdown('<div style="margin-top:4px;"></div>', unsafe_allow_html=True)
         if st.button("✕  Clear all", use_container_width=True, key="filter_clear"):
             session["filter_state"]       = FilterState()
@@ -213,47 +227,6 @@ def _chip_counts(df: pd.DataFrame) -> dict[str, int]:
                         if Col.UNLICENSED_SIGNAL in df.columns else 0,
     }
 
-
-# ── SERVICE TYPE CHIPS — grouped + highlighted ────────────────────────────────
-def _svc_chips(session, df: pd.DataFrame) -> None:
-    if Col.SERVICE not in df.columns:
-        return
-
-    # Only show groups that have at least 1 entity in the data
-    groups_present = []
-    for label, keywords in _SVC_GROUPS.items():
-        mask = df[Col.SERVICE].fillna("").astype(str).str.lower().apply(
-            lambda s: any(k in s for k in keywords)
-        )
-        count = int(mask.sum())
-        if count > 0:
-            groups_present.append((label, count))
-
-    if not groups_present:
-        return
-
-    st.markdown(
-        '<div style="margin:6px 0 5px 0;font-size:10px;font-weight:700;color:var(--muted);'
-        'letter-spacing:0.1em;text-transform:uppercase;font-family:\'IBM Plex Mono\',monospace;">'
-        'Service Type</div>',
-        unsafe_allow_html=True,
-    )
-
-    active_svc = session.get("filter_svc", "")
-    cols = st.columns(len(groups_present) + 1)
-    for i, (label, count) in enumerate(groups_present):
-        with cols[i]:
-            active  = active_svc == label
-            display = f"✓ {label} ({count})" if active else f"{label} ({count})"
-            if st.button(display, use_container_width=True, key=f"svc_{label}"):
-                session["filter_svc"] = "" if active else label
-                st.rerun()
-
-    with cols[-1]:
-        if active_svc:
-            if st.button("✕ Reset", key="svc_reset", use_container_width=True):
-                session["filter_svc"] = ""
-                st.rerun()
 
 
 # ── STATS BAR — accurate totals from full filtered set ───────────────────────
