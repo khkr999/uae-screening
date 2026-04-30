@@ -309,15 +309,32 @@ def _workflow(row: pd.Series, session) -> None:
     current = state.get_workflow(session, eid)
 
     section_header("Workflow Status")
-    new_status = st.radio(
-        "Change status", options=_WORKFLOW,
-        index=_WORKFLOW.index(current) if current in _WORKFLOW else 0,
-        horizontal=False, key=f"drawer_workflow_{eid}",
-        label_visibility="collapsed",
-    )
-    if new_status != current:
-        state.set_workflow(session, eid, new_status)
-        st.rerun()
+    # Use buttons instead of st.radio to avoid Streamlit widget-state caching
+    # which causes the radio to show a stale value even after session updates.
+    for status in _WORKFLOW:
+        is_active = status == current
+        color = _WF_COLOR.get(status, "#6B7280")
+        bg    = _WF_BG.get(status, "transparent")
+        if is_active:
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;'
+                f'background:{bg};border:1px solid {color};border-radius:8px;margin-bottom:4px;">'
+                f'<span style="width:8px;height:8px;border-radius:999px;background:{color};'
+                f'flex-shrink:0;display:inline-block;"></span>'
+                f'<span style="font-size:12px;font-weight:700;color:{color};'
+                f'font-family:\'IBM Plex Mono\',monospace;">{status}</span>'
+                f'<span style="margin-left:auto;font-size:9px;font-weight:700;color:{color};'
+                f'font-family:\'IBM Plex Mono\',monospace;">CURRENT</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            if st.button(
+                status, key=f"wf_btn_{eid}_{status}",
+                use_container_width=True,
+            ):
+                state.set_workflow(session, eid, status)
+                session.pop(f"_prefetched_notes_{eid}", None)
+                st.rerun()
 
 
 # ── REGISTER MATCH ────────────────────────────────────────────────────────────
