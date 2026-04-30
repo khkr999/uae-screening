@@ -22,7 +22,8 @@ def render(df: pd.DataFrame, metrics: RunMetrics, session) -> None:
     with left:
         _render_priority_queue(df, session)
     with right:
-        st.markdown('<div style="margin-top:-24px;"></div>', unsafe_allow_html=True)
+        _render_summary(metrics, df)
+        st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
         _render_risk_distribution(df)
 
 
@@ -76,6 +77,7 @@ def _render_priority_queue(df: pd.DataFrame, session) -> None:
             entity_card(row, on_open_key=key)
             if st.session_state.get(key):
                 state.set_selected(session, str(row.get("id", "")))
+                st.rerun()
 
 
 # ── RUN SUMMARY ───────────────────────────────────────────────────────────────
