@@ -77,6 +77,7 @@ def _render_priority_queue(df: pd.DataFrame, session) -> None:
             entity_card(row, on_open_key=key)
             if st.session_state.get(key):
                 state.set_selected(session, str(row.get("id", "")))
+                session["_scroll_to_drawer"] = True
                 st.rerun()
 
 
