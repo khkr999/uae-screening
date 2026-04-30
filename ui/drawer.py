@@ -440,41 +440,50 @@ def _annotations(row: pd.Series, session) -> None:
     input_key = f"note_input_{eid}"
     btn_key   = f"note_btn_{eid}"
     notes     = state.get_annotations(session, eid)
+    current_user = session.get("current_user", "")
 
     section_header("Notes", f"{len(notes)} comment{'s' if len(notes) != 1 else ''}")
 
     if notes:
-        parts = []
-        for entry in notes:
-            txt    = escape(entry.get("text",   "") if isinstance(entry, dict) else str(entry))
-            ts     = escape(entry.get("ts",     "") if isinstance(entry, dict) else "")
-            author = entry.get("author", "You")    if isinstance(entry, dict) else "You"
-            av_ltr = author[0].upper()             if author else "?"
-            ts_html = (f'<span style="color:var(--muted);font-size:10px;'
-                       f'font-family:\'IBM Plex Mono\',monospace;margin-left:6px;">{ts}</span>') if ts else ""
-            parts.append(
-                f'<div style="padding:10px 12px;margin-bottom:6px;background:var(--card);'
-                f'border:1px solid var(--border);border-radius:8px;'
-                f'border-left:2px solid var(--accent);">'
-                f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
-                f'<span style="width:22px;height:22px;border-radius:999px;'
-                f'background:var(--accent-s);display:inline-flex;align-items:center;'
-                f'justify-content:center;font-size:10px;font-weight:700;color:var(--accent);">{av_ltr}</span>'
-                f'<span style="font-size:11px;font-weight:700;color:var(--dim);'
-                f'margin-left:8px;font-family:\'IBM Plex Mono\',monospace;">{escape(author)}</span>'
-                f'{ts_html}</div>'
-                f'<div style="font-size:12px;color:var(--text);line-height:1.55;'
-                f'padding-left:30px;">{txt}</div></div>'
-            )
-        st.markdown("".join(parts), unsafe_allow_html=True)
+        for idx, entry in enumerate(notes):
+            txt    = entry.get("text",   "") if isinstance(entry, dict) else str(entry)
+            ts     = entry.get("ts",     "") if isinstance(entry, dict) else ""
+            author = entry.get("author", "You") if isinstance(entry, dict) else "You"
+            av_ltr = author[0].upper() if author else "?"
+
+            note_col, del_col = st.columns([9, 1])
+            with note_col:
+                st.markdown(
+                    f'<div style="padding:10px 12px;margin-bottom:4px;background:var(--card);'
+                    f'border:1px solid var(--border);border-radius:8px;'
+                    f'border-left:2px solid var(--accent);">'
+                    f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
+                    f'<span style="width:22px;height:22px;border-radius:999px;'
+                    f'background:var(--accent-s);display:inline-flex;align-items:center;'
+                    f'justify-content:center;font-size:10px;font-weight:700;color:var(--accent);">{av_ltr}</span>'
+                    f'<span style="font-size:11px;font-weight:700;color:var(--dim);'
+                    f'margin-left:8px;font-family:\'IBM Plex Mono\',monospace;">{escape(author)}</span>'
+                    + (f'<span style="color:var(--muted);font-size:10px;font-family:\'IBM Plex Mono\',monospace;margin-left:6px;">{escape(ts)}</span>' if ts else "")
+                    + f'</div><div style="font-size:12px;color:var(--text);line-height:1.55;padding-left:30px;">{escape(txt)}</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with del_col:
+                st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
+                # Allow deletion by the author or by owners
+                can_delete = (author == current_user) or session.get("is_owner", False)
+                if can_delete:
+                    if st.button("✕", key=f"del_note_{eid}_{idx}", help="Delete this comment"):
+                        state.delete_annotation(session, eid, idx)
+                        session[f"note_nonce_{eid}"] = session.get(f"note_nonce_{eid}", 0) + 1
+                        st.rerun()
     else:
         st.markdown('<div style="font-size:11px;color:var(--muted);padding:8px 0;">'
                     'No comments yet. Add one below.</div>', unsafe_allow_html=True)
 
+    nonce = session.get(f"note_nonce_{eid}", 0)
     col_in, col_btn = st.columns([5, 1])
     with col_in:
-        nonce = session.get(f"note_nonce_{eid}", 0)
-    note_text = st.text_input("Note", key=f"{input_key}_{nonce}",
+        note_text = st.text_input("Note", key=f"{input_key}_{nonce}",
                                   placeholder="Add a comment…", label_visibility="collapsed")
     with col_btn:
         add = st.button("Add", key=btn_key, use_container_width=True)
@@ -483,6 +492,5 @@ def _annotations(row: pd.Series, session) -> None:
         text = (note_text or "").strip()
         if text:
             state.add_annotation(session, eid, text)
-            # Increment nonce to reset the text input on next render
             session[f"note_nonce_{eid}"] = session.get(f"note_nonce_{eid}", 0) + 1
             st.rerun()
