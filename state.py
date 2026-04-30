@@ -1,130 +1,78 @@
-"""Session state helpers + persistent storage."""
+"""Session state helpers — local UI state + Supabase shared persistence."""
 from __future__ import annotations
-
-import json
 import logging
 from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
 from typing import Any
-
 from models import FilterState
 
 logger = logging.getLogger(__name__)
 
-_PERSIST_FILE_NAME = ".screening_workspace.json"
-_persist_file: Path | None = None
-
-
-def _get_persist_file() -> Path | None:
-    global _persist_file
-    if _persist_file is not None:
-        return _persist_file
-    try:
-        from config import DATA_DIR
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _persist_file = DATA_DIR / _PERSIST_FILE_NAME
-        return _persist_file
-    except Exception as exc:
-        logger.warning("Persistence unavailable: %s", exc)
-        return None
-
-
 _DEFAULTS: dict[str, Any] = {
-    "theme":               "dark",
-    "active_tab":          "overview",
-    "selected_entity_id":  None,
-    "filter_state":        None,
-    "workflow_overrides":  {},
-    "annotations":         {},
-    "watchlist":           [],
-    "file_upload_nonce":   0,
-    "current_user":        "",
+    "theme": "dark", "active_tab": "overview", "selected_entity_id": None,
+    "filter_state": None, "workflow_overrides": {}, "annotations": {},
+    "watchlist": [], "file_upload_nonce": 0, "current_user": "",
 }
 
-
-# ── Disk helpers ──────────────────────────────────────────────────────────────
-def _load_persisted() -> dict:
+def _db():
     try:
-        pf = _get_persist_file()
-        if pf and pf.exists():
-            return json.loads(pf.read_text(encoding="utf-8"))
-    except Exception as exc:
-        logger.warning("Could not load workspace: %s", exc)
-    return {}
+        from db import get_client
+        return get_client()
+    except Exception:
+        return None
 
-
-def _save_persisted(session) -> None:
+def _fmt_ts(iso: str) -> str:
     try:
-        pf = _get_persist_file()
-        if pf is None:
-            return
-        wl = session.get("watchlist", [])
-        if isinstance(wl, set):
-            wl = list(wl)
-        payload = {
-            "workflow_overrides": dict(session.get("workflow_overrides", {})),
-            "annotations":        dict(session.get("annotations", {})),
-            "watchlist":          wl,
-            "theme":              session.get("theme", "dark"),
-            "current_user":       session.get("current_user", ""),
-            "is_owner":           bool(session.get("is_owner", False)),
-        }
-        pf.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as exc:
-        logger.warning("Could not save workspace: %s", exc)
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%d %b %H:%M")
+    except Exception:
+        return iso[:16]
 
-
-# ── Init ──────────────────────────────────────────────────────────────────────
 def init_state(session) -> None:
     for key, value in _DEFAULTS.items():
         if key not in session:
             session[key] = value
     if session.get("filter_state") is None:
         session["filter_state"] = FilterState()
-
     wl = session.get("watchlist", [])
     if isinstance(wl, set):
         session["watchlist"] = list(wl)
-
     if not session.get("_workspace_loaded"):
-        try:
-            persisted = _load_persisted()
-            if persisted.get("workflow_overrides"):
-                session["workflow_overrides"] = persisted["workflow_overrides"]
-            if persisted.get("annotations"):
-                session["annotations"] = persisted["annotations"]
-            if persisted.get("watchlist"):
-                wl = persisted["watchlist"]
-                session["watchlist"] = list(wl) if not isinstance(wl, list) else wl
-            if persisted.get("theme"):
-                session["theme"] = persisted["theme"]
-            if persisted.get("current_user"):
-                session["current_user"] = persisted["current_user"]
-            if "is_owner" in persisted:
-                session["is_owner"] = persisted["is_owner"]
-        except Exception as exc:
-            logger.warning("Could not restore workspace: %s", exc)
+        _pull_shared_state(session)
         session["_workspace_loaded"] = True
 
+def _pull_shared_state(session) -> None:
+    db = _db()
+    if db is None:
+        return
+    try:
+        rows = db.table("workflow_overrides").select("entity_id,status").execute()
+        session["workflow_overrides"] = {r["entity_id"]: r["status"] for r in (rows.data or [])}
+        rows = db.table("watchlist").select("entity_id").execute()
+        session["watchlist"] = [r["entity_id"] for r in (rows.data or [])]
+        rows = db.table("annotations").select("*").order("created_at").execute()
+        annotations: dict[str, list] = {}
+        for r in (rows.data or []):
+            eid = r["entity_id"]
+            annotations.setdefault(eid, []).append({
+                "text": r["text"], "ts": _fmt_ts(r["created_at"]), "author": r["author"],
+            })
+        session["annotations"] = annotations
+    except Exception as exc:
+        logger.warning("Could not pull shared state from Supabase: %s", exc)
 
-# ── Generic ───────────────────────────────────────────────────────────────────
 def get(session, key: str, default=None):
     return session.get(key, default)
-
 
 def set_(session, key: str, value) -> None:
     session[key] = value
 
-
-# ── Filter ────────────────────────────────────────────────────────────────────
 def get_filter(session) -> FilterState:
     fs = session.get("filter_state")
     if fs is None:
         fs = FilterState()
         session["filter_state"] = fs
     return fs
-
 
 def update_filter(session, **changes) -> FilterState:
     current = get_filter(session)
@@ -134,83 +82,114 @@ def update_filter(session, **changes) -> FilterState:
     session["filter_state"] = updated
     return updated
 
-
-# ── Theme ─────────────────────────────────────────────────────────────────────
 def toggle_theme(session) -> None:
     session["theme"] = "light" if session.get("theme") == "dark" else "dark"
-    _save_persisted(session)
 
-
-# ── Entity selection ──────────────────────────────────────────────────────────
 def set_selected(session, entity_id) -> None:
     session["selected_entity_id"] = entity_id
-
 
 def get_selected(session):
     return session.get("selected_entity_id")
 
-
-# ── Workflow ──────────────────────────────────────────────────────────────────
 def set_workflow(session, entity_id: str, status: str) -> None:
     overrides = dict(session.get("workflow_overrides", {}))
     overrides[entity_id] = status
     session["workflow_overrides"] = overrides
-    _save_persisted(session)
-
+    db = _db()
+    if db is None:
+        return
+    try:
+        db.table("workflow_overrides").upsert({
+            "entity_id": entity_id, "status": status,
+            "updated_by": session.get("current_user", "Unknown"),
+            "updated_at": datetime.utcnow().isoformat(),
+        }).execute()
+    except Exception as exc:
+        logger.warning("Could not save workflow to Supabase: %s", exc)
 
 def get_workflow(session, entity_id: str) -> str:
     return session.get("workflow_overrides", {}).get(entity_id, "Open")
 
-
-# ── Watchlist ─────────────────────────────────────────────────────────────────
 def toggle_watchlist(session, entity_id: str) -> bool:
     wl = list(session.get("watchlist", []))
+    db = _db()
     if entity_id in wl:
         wl.remove(entity_id)
         in_wl = False
+        if db:
+            try:
+                db.table("watchlist").delete().eq("entity_id", entity_id).execute()
+            except Exception as exc:
+                logger.warning("Could not remove from watchlist: %s", exc)
     else:
         wl.append(entity_id)
         in_wl = True
+        if db:
+            try:
+                db.table("watchlist").upsert({
+                    "entity_id": entity_id,
+                    "added_by": session.get("current_user", "Unknown"),
+                    "added_at": datetime.utcnow().isoformat(),
+                }).execute()
+            except Exception as exc:
+                logger.warning("Could not add to watchlist: %s", exc)
     session["watchlist"] = wl
-    _save_persisted(session)
     return in_wl
-
 
 def in_watchlist(session, entity_id: str) -> bool:
     return entity_id in session.get("watchlist", [])
 
-
 def get_watchlist(session) -> set:
     return set(session.get("watchlist", []))
 
-
-# ── Annotations — user-aware, persisted ──────────────────────────────────────
 def add_annotation(session, entity_id: str, text: str) -> None:
-    """Add a timestamped, author-attributed annotation."""
     author = session.get("current_user", "Unknown")
-    notes  = dict(session.get("annotations", {}))
-    entry  = {
-        "text":   text,
-        "ts":     datetime.now().strftime("%d %b %H:%M"),
-        "author": author,
-    }
+    ts = datetime.now().strftime("%d %b %H:%M")
+    notes = dict(session.get("annotations", {}))
+    entry = {"text": text, "ts": ts, "author": author}
     notes[entity_id] = [*notes.get(entity_id, []), entry]
     session["annotations"] = notes
-    _save_persisted(session)
-
+    db = _db()
+    if db is None:
+        return
+    try:
+        db.table("annotations").insert({
+            "entity_id": entity_id, "author": author, "text": text,
+            "created_at": datetime.utcnow().isoformat(),
+        }).execute()
+    except Exception as exc:
+        logger.warning("Could not save annotation to Supabase: %s", exc)
 
 def get_annotations(session, entity_id: str) -> list:
+    db = _db()
+    if db:
+        try:
+            rows = db.table("annotations").select("*").eq("entity_id", entity_id).order("created_at").execute()
+            return [{"text": r["text"], "ts": _fmt_ts(r["created_at"]), "author": r["author"]} for r in (rows.data or [])]
+        except Exception as exc:
+            logger.warning("Could not fetch annotations: %s", exc)
     return session.get("annotations", {}).get(entity_id, [])
-
 
 def get_all_annotations(session) -> dict:
     return dict(session.get("annotations", {}))
 
-
-# ── Review stats ──────────────────────────────────────────────────────────────
 def get_review_stats(session) -> dict[str, int]:
+    db = _db()
+    if db:
+        try:
+            rows = db.table("workflow_overrides").select("entity_id,status").execute()
+            counts: dict[str, int] = {"Open": 0, "In Review": 0, "Escalated": 0, "Cleared": 0}
+            overrides = {}
+            for r in (rows.data or []):
+                overrides[r["entity_id"]] = r["status"]
+                if r["status"] in counts:
+                    counts[r["status"]] += 1
+            session["workflow_overrides"] = overrides
+            return counts
+        except Exception as exc:
+            logger.warning("Could not fetch review stats: %s", exc)
     overrides = session.get("workflow_overrides", {})
-    counts: dict[str, int] = {"Open": 0, "In Review": 0, "Escalated": 0, "Cleared": 0}
+    counts = {"Open": 0, "In Review": 0, "Escalated": 0, "Cleared": 0}
     for status in overrides.values():
         if status in counts:
             counts[status] += 1
