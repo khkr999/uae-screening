@@ -57,6 +57,22 @@ def render(df: pd.DataFrame, session) -> None:
     # Read from local session cache — instant, no Supabase call
     session[f"_prefetched_notes_{eid}"] = state.get_annotations(session, eid)
 
+    # Anchor div so JS can scroll to the drawer
+    st.markdown('<div id="uae-drawer-anchor" style="height:0;margin:0;padding:0;"></div>',
+                unsafe_allow_html=True)
+    if session.pop("_scroll_to_drawer", False):
+        st.markdown(
+            '<script>'
+            '(function(){'
+            '  function go(){'
+            '    var el=document.getElementById("uae-drawer-anchor");'
+            '    if(el){el.scrollIntoView({behavior:"smooth",block:"start"});}}'
+            '  setTimeout(go,250);'
+            '})();'
+            '</script>',
+            unsafe_allow_html=True,
+        )
+
     with st.expander(f"📋  {row.get(Col.BRAND, '—')}  ·  Entity Details", expanded=True):
         # ── Warning banner (unlicensed) ──
         _warning_banner(row)
