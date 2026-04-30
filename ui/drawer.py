@@ -305,27 +305,6 @@ def _workflow(row: pd.Series, session) -> None:
     current = state.get_workflow(session, eid)
 
     section_header("Workflow Status")
-    pills = '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">'
-    for s in _WORKFLOW:
-        active = s == current
-        color  = _WF_COLOR[s]
-        bg     = _WF_BG[s] if active else "transparent"
-        pills += (
-            f'<div style="display:flex;align-items:center;padding:7px 12px;'
-            f'border-radius:8px;border:1px solid {"" if not active else color};'
-            f'border-color:{color if active else "var(--border)"};background:{bg};">'
-            f'<span style="width:7px;height:7px;border-radius:999px;'
-            f'background:{color if active else "var(--border)"};'
-            f'display:inline-block;margin-right:8px;"></span>'
-            f'<span style="font-size:12px;font-weight:{"700" if active else "400"};'
-            f'color:{"var(--text)" if active else "var(--muted)"};'
-            f'font-family:\'IBM Plex Mono\',monospace;">{s}</span>'
-            + (f'<span style="margin-left:auto;font-size:9px;color:{color};font-weight:700;">CURRENT</span>' if active else "")
-            + '</div>'
-        )
-    pills += "</div>"
-    st.markdown(pills, unsafe_allow_html=True)
-
     new_status = st.radio(
         "Change status", options=_WORKFLOW,
         index=_WORKFLOW.index(current) if current in _WORKFLOW else 0,
@@ -494,7 +473,8 @@ def _annotations(row: pd.Series, session) -> None:
 
     col_in, col_btn = st.columns([5, 1])
     with col_in:
-        note_text = st.text_input("Note", key=input_key,
+        nonce = session.get(f"note_nonce_{eid}", 0)
+    note_text = st.text_input("Note", key=f"{input_key}_{nonce}",
                                   placeholder="Add a comment…", label_visibility="collapsed")
     with col_btn:
         add = st.button("Add", key=btn_key, use_container_width=True)
@@ -503,6 +483,6 @@ def _annotations(row: pd.Series, session) -> None:
         text = (note_text or "").strip()
         if text:
             state.add_annotation(session, eid, text)
+            # Increment nonce to reset the text input on next render
             session[f"note_nonce_{eid}"] = session.get(f"note_nonce_{eid}", 0) + 1
-            st.success("✓ Note saved")
             st.rerun()
