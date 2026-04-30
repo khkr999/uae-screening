@@ -54,6 +54,10 @@ def render(df: pd.DataFrame, session) -> None:
         return
     row = hits.iloc[0]
 
+    # Refresh workflow + annotations from Supabase each time drawer opens
+    state.get_review_stats(session)  # refreshes workflow_overrides in session
+    session[f"_prefetched_notes_{eid}"] = state.get_annotations(session, eid)
+
     with st.expander(f"📋  {row.get(Col.BRAND, '—')}  ·  Entity Details", expanded=True):
         # ── Warning banner (unlicensed) ──
         _warning_banner(row)
@@ -129,7 +133,7 @@ def _status_strip(row: pd.Series, session) -> None:
     color   = _WF_COLOR.get(current, "#6B7280")
     bg      = _WF_BG.get(current, "transparent")
     in_wl   = state.in_watchlist(session, eid)
-    notes   = state.get_annotations(session, eid)
+    notes   = session.get(f"_prefetched_notes_{eid}") or state.get_annotations(session, eid)
 
     wl_badge   = ('<span style="margin-left:8px;font-size:9px;font-weight:700;color:#C9A84C;'
                   'background:rgba(201,168,76,0.10);border-radius:4px;padding:2px 7px;'
@@ -439,7 +443,7 @@ def _annotations(row: pd.Series, session) -> None:
     eid       = str(row.get("id", ""))
     input_key = f"note_input_{eid}"
     btn_key   = f"note_btn_{eid}"
-    notes     = state.get_annotations(session, eid)
+    notes     = session.get(f"_prefetched_notes_{eid}") or state.get_annotations(session, eid)
     current_user = session.get("current_user", "")
 
     section_header("Notes", f"{len(notes)} comment{'s' if len(notes) != 1 else ''}")
@@ -493,4 +497,5 @@ def _annotations(row: pd.Series, session) -> None:
         if text:
             state.add_annotation(session, eid, text)
             session[f"note_nonce_{eid}"] = session.get(f"note_nonce_{eid}", 0) + 1
+            session.pop(f"_prefetched_notes_{eid}", None)
             st.rerun()
