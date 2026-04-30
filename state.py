@@ -38,12 +38,35 @@ def init_state(session) -> None:
     if isinstance(wl, set):
         session["watchlist"] = list(wl)
     if not session.get("_workspace_loaded"):
+        # Restore login first so the user doesn't get logged out on refresh
+        _restore_login(session)
         # Preserve UI-only state that must survive the Supabase pull
         _selected = session.get("selected_entity_id")
         _pull_shared_state(session)
         if _selected:
             session["selected_entity_id"] = _selected
         session["_workspace_loaded"] = True
+
+def _restore_login(session) -> None:
+    """
+    Streamlit has no native cookies, so we store the last active session
+    in Supabase. On refresh we restore whoever was last seen — suitable
+    for a single-user-per-browser internal tool.
+    """
+    if session.get("current_user"):
+        return  # already logged in this session
+    db = _db()
+    if db is None:
+        return
+    try:
+        rows = db.table("sessions").select("username,is_owner") \
+                 .order("last_seen", desc=True).limit(1).execute()
+        if rows.data:
+            r = rows.data[0]
+            session["current_user"] = r["username"]
+            session["is_owner"]     = bool(r["is_owner"])
+    except Exception as exc:
+        logger.warning("Could not restore login: %s", exc)
 
 def _pull_shared_state(session) -> None:
     db = _db()
@@ -163,6 +186,28 @@ def add_annotation(session, entity_id: str, text: str) -> None:
         }).execute()
     except Exception as exc:
         logger.warning("Could not save annotation to Supabase: %s", exc)
+
+def delete_annotation(session, entity_id: str, index: int) -> None:
+    """Delete a comment by index — removes from Supabase and local cache."""
+    # Get fresh list from Supabase to get the correct row id
+    db = _db()
+    if db:
+        try:
+            rows = db.table("annotations").select("id").eq("entity_id", entity_id)                      .order("created_at").execute()
+            if rows.data and index < len(rows.data):
+                row_id = rows.data[index]["id"]
+                db.table("annotations").delete().eq("id", row_id).execute()
+        except Exception as exc:
+            logger.warning("Could not delete annotation from Supabase: %s", exc)
+
+    # Update local session cache
+    notes = dict(session.get("annotations", {}))
+    entries = list(notes.get(entity_id, []))
+    if 0 <= index < len(entries):
+        entries.pop(index)
+    notes[entity_id] = entries
+    session["annotations"] = notes
+
 
 def get_annotations(session, entity_id: str) -> list:
     db = _db()
