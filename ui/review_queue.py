@@ -43,23 +43,23 @@ def render(df: pd.DataFrame, session) -> None:
     with tabs[0]:
         _render_column(df, session, statuses=["Open"], title="To Do",
                        desc="High-risk entities not yet reviewed — action required.",
-                       empty_msg="Nothing left to do", empty_icon="✅")
+                       empty_msg="Nothing left to do", empty_icon="✅", tab_prefix="todo")
 
     with tabs[1]:
         _render_column(df, session, statuses=["In Review"], title="In Progress",
                        desc="Entities currently under review.",
-                       empty_msg="Nothing in review", empty_icon="📋")
+                       empty_msg="Nothing in review", empty_icon="📋", tab_prefix="inprog")
 
     with tabs[2]:
         _render_column(df, session, statuses=["Escalated"], title="Escalated",
                        desc="Entities escalated for urgent attention.",
-                       empty_msg="No escalations", empty_icon="✓")
+                       empty_msg="No escalations", empty_icon="✓", tab_prefix="esc")
 
     with tabs[3]:
         _render_column(df, session, statuses=["Cleared"], title="Done",
                        desc="Reviewed and cleared entities.",
                        empty_msg="No cleared entities yet", empty_icon="📋",
-                       show_reopen=True)
+                       show_reopen=True, tab_prefix="done")
 
     with tabs[4]:
         _render_watchlist(df, session)
@@ -144,6 +144,7 @@ def _render_column(
     empty_msg: str,
     empty_icon: str,
     show_reopen: bool = False,
+    tab_prefix: str = "",
 ) -> None:
     overrides = session.get("workflow_overrides", {})
 
@@ -173,11 +174,11 @@ def _render_column(
     )
 
     for _, row in rows.iterrows():
-        _render_queue_card(row, session, show_reopen=show_reopen)
+        _render_queue_card(row, session, show_reopen=show_reopen, tab_prefix=tab_prefix)
 
 
 # ── QUEUE CARD ────────────────────────────────────────────────────────────────
-def _render_queue_card(row: pd.Series, session, show_reopen: bool = False) -> None:
+def _render_queue_card(row: pd.Series, session, show_reopen: bool = False, tab_prefix: str = "") -> None:
     eid       = str(row.get("id", ""))
     brand     = str(row.get(Col.BRAND,     "—") or "—")
     svc       = str(row.get(Col.SERVICE,   "—") or "—")
@@ -234,34 +235,34 @@ def _render_queue_card(row: pd.Series, session, show_reopen: bool = False) -> No
     btn_cols = st.columns(4)
 
     with btn_cols[0]:
-        if st.button("Open Details", key=f"rq_open_{eid}", use_container_width=True):
+        if st.button("Open Details", key=f"rq_open_{tab_prefix}_{eid}", use_container_width=True):
             state.set_selected(session, eid)
             st.rerun()
 
     with btn_cols[1]:
         if current != "In Review":
-            if st.button("→ In Review", key=f"rq_inreview_{eid}", use_container_width=True):
+            if st.button("→ In Review", key=f"rq_inreview_{tab_prefix}_{eid}", use_container_width=True):
                 state.set_workflow(session, eid, "In Review")
                 st.rerun()
         else:
-            if st.button("→ Escalate", key=f"rq_esc_{eid}", use_container_width=True):
+            if st.button("→ Escalate", key=f"rq_esc_{tab_prefix}_{eid}", use_container_width=True):
                 state.set_workflow(session, eid, "Escalated")
                 st.rerun()
 
     with btn_cols[2]:
         if current != "Cleared":
-            if st.button("✓ Clear", key=f"rq_clear_{eid}", use_container_width=True):
+            if st.button("✓ Clear", key=f"rq_clear_{tab_prefix}_{eid}", use_container_width=True):
                 state.set_workflow(session, eid, "Cleared")
                 st.success(f"✓ {brand} cleared")
                 st.rerun()
         elif show_reopen:
-            if st.button("↩ Reopen", key=f"rq_reopen_{eid}", use_container_width=True):
+            if st.button("↩ Reopen", key=f"rq_reopen_{tab_prefix}_{eid}", use_container_width=True):
                 state.set_workflow(session, eid, "Open")
                 st.rerun()
 
     with btn_cols[3]:
         wl_lbl = "★ Watchlisted" if in_wl else "☆ Watchlist"
-        if st.button(wl_lbl, key=f"rq_wl_{eid}", use_container_width=True):
+        if st.button(wl_lbl, key=f"rq_wl_{tab_prefix}_{eid}", use_container_width=True):
             state.toggle_watchlist(session, eid)
             st.rerun()
 
@@ -291,4 +292,4 @@ def _render_watchlist(df: pd.DataFrame, session) -> None:
     )
 
     for _, row in wl_rows.iterrows():
-        _render_queue_card(row, session, show_reopen=False)
+        _render_queue_card(row, session, show_reopen=False, tab_prefix="wl")
