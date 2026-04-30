@@ -42,11 +42,7 @@ _SIGNAL_TOOLTIPS = {
 }
 
 
-def render(df: pd.DataFrame, session, inline: bool = False) -> None:
-    """
-    inline=True  → renders as a flat panel (used in overview right column)
-    inline=False → renders inside an expander (used from other tabs)
-    """
+def render(df: pd.DataFrame, session) -> None:
     eid = state.get_selected(session)
     if not eid:
         return
@@ -61,7 +57,7 @@ def render(df: pd.DataFrame, session, inline: bool = False) -> None:
     # Read from local session cache — instant, no Supabase call
     session[f"_prefetched_notes_{eid}"] = state.get_annotations(session, eid)
 
-    def _body():
+    with st.expander(f"📋  {row.get(Col.BRAND, '—')}  ·  Entity Details", expanded=True):
         _warning_banner(row)
         _sp(6)
         _status_strip(row, session)
@@ -98,22 +94,6 @@ def render(df: pd.DataFrame, session, inline: bool = False) -> None:
             if st.button("✕ Close", key="drawer_close"):
                 state.set_selected(session, None)
                 st.rerun()
-
-    if inline:
-        # Render as a styled card panel — no expander wrapper
-        st.markdown(
-            f'<div style="background:var(--card);border:1px solid var(--border);'
-            f'border-radius:12px;padding:16px 18px;margin-top:-4px;">'
-            f'<div style="font-size:13px;font-weight:700;color:var(--text);'
-            f'margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;">'
-            f'📋 {escape(str(row.get(Col.BRAND, "—")))} · Details'
-            f'</div></div>',
-            unsafe_allow_html=True,
-        )
-        _body()
-    else:
-        with st.expander(f"📋  {row.get(Col.BRAND, '—')}  ·  Entity Details", expanded=True):
-            _body()
 
 
 def _sp(px: int = 14) -> None:
