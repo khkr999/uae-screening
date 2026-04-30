@@ -490,7 +490,10 @@ def _annotations(row: pd.Series, session) -> None:
             with del_col:
                 st.markdown('<div style="margin-top:8px;"></div>', unsafe_allow_html=True)
                 # Allow deletion by the author or by owners
-                can_delete = (author == current_user) or session.get("is_owner", False)
+                # Owners can delete anything; users can delete their own comments
+                # Case-insensitive match handles slight name variations between sessions
+                is_own_comment = author.strip().lower() == current_user.strip().lower()
+                can_delete = is_own_comment or session.get("is_owner", False)
                 if can_delete:
                     if st.button("✕", key=f"del_note_{eid}_{idx}", help="Delete this comment"):
                         state.delete_annotation(session, eid, idx)
