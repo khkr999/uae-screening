@@ -36,8 +36,11 @@ def _db():
 
 def _fmt_ts(iso: str) -> str:
     try:
+        from datetime import timezone, timedelta
+        UAE_TZ = timezone(timedelta(hours=4))
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.strftime("%d %b %H:%M")
+        dt_uae = dt.astimezone(UAE_TZ)
+        return dt_uae.strftime("%d %b %Y, %H:%M")
     except Exception:
         return iso[:16]
 
@@ -227,7 +230,9 @@ def get_watchlist(session) -> set:
 # ── Annotations — write-through cache ────────────────────────────────────────
 def add_annotation(session, entity_id: str, text: str) -> None:
     author = session.get("current_user", "Unknown")
-    ts     = datetime.now().strftime("%d %b %H:%M")
+    from datetime import timezone, timedelta
+    UAE_TZ = timezone(timedelta(hours=4))
+    ts     = datetime.now(UAE_TZ).strftime("%d %b %Y, %H:%M")
 
     # Update local cache immediately
     notes = dict(session.get("annotations", {}))
